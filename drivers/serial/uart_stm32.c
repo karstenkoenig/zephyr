@@ -42,11 +42,11 @@ static int uart_stm32_poll_in(struct device *dev, unsigned char *c)
 {
 	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 
-	if (!LL_USART_IsActiveFlag_RXNE(UartInstance)) {
+	if (!LL_LPUART_IsActiveFlag_RXNE(UartInstance)) {
 		return -1;
 	}
 
-	*c = (unsigned char)LL_USART_ReceiveData8(UartInstance);
+	*c = (unsigned char)LL_LPUART_ReceiveData8(UartInstance);
 
 	return 0;
 }
@@ -57,12 +57,12 @@ static unsigned char uart_stm32_poll_out(struct device *dev,
 	USART_TypeDef *UartInstance = UART_STRUCT(dev);
 
 	/* Wait for TXE flag to be raised */
-	while (!LL_USART_IsActiveFlag_TXE(UartInstance))
+	while (!LL_LPUART_IsActiveFlag_TXE(UartInstance))
 		;
 
-	LL_USART_ClearFlag_TC(UartInstance);
+	LL_LPUART_ClearFlag_TC(UartInstance);
 
-	LL_USART_TransmitData8(UartInstance, (u8_t)c);
+	LL_LPUART_TransmitData8(UartInstance, (u8_t)c);
 
 	return c;
 }
@@ -272,39 +272,36 @@ static int uart_stm32_init(struct device *dev)
 	clock_control_on(data->clock,
 			(clock_control_subsys_t *)&config->pclken);
 
-	LL_USART_Disable(UartInstance);
+	LL_LPUART_Disable(UartInstance);
 
 	/* TX/RX direction */
-	LL_USART_SetTransferDirection(UartInstance,
-				      LL_USART_DIRECTION_TX_RX);
+	LL_LPUART_SetTransferDirection(UartInstance,
+				      LL_LPUART_DIRECTION_TX_RX);
 
 	/* 8 data bit, 1 start bit, 1 stop bit, no parity */
-	LL_USART_ConfigCharacter(UartInstance,
-				 LL_USART_DATAWIDTH_8B,
-				 LL_USART_PARITY_NONE,
-				 LL_USART_STOPBITS_1);
+	LL_LPUART_ConfigCharacter(UartInstance,
+				 LL_LPUART_DATAWIDTH_8B,
+				 LL_LPUART_PARITY_NONE,
+				 LL_LPUART_STOPBITS_1);
 
 	/* Get clock rate */
 	clock_control_get_rate(data->clock,
 			       (clock_control_subsys_t *)&config->pclken,
 			       &clock_rate);
 
-	LL_USART_SetBaudRate(UartInstance,
+	LL_LPUART_SetBaudRate(UartInstance,
 			     clock_rate,
 #ifdef USART_PRESC_PRESCALER
-			     LL_USART_PRESCALER_DIV1,
-#endif
-#ifdef USART_CR1_OVER8
-			     LL_USART_OVERSAMPLING_16,
+			     LL_LPUART_PRESCALER_DIV1,
 #endif
 			     data->huart.Init.BaudRate);
 
-	LL_USART_Enable(UartInstance);
+	LL_LPUART_Enable(UartInstance);
 
 #if !defined(CONFIG_SOC_SERIES_STM32F4X) && !defined(CONFIG_SOC_SERIES_STM32F1X)
 	/* Polling USART initialisation */
-	while ((!(LL_USART_IsActiveFlag_TEACK(UartInstance))) ||
-	      (!(LL_USART_IsActiveFlag_REACK(UartInstance))))
+	while ((!(LL_LPUART_IsActiveFlag_TEACK(UartInstance))) ||
+	      (!(LL_LPUART_IsActiveFlag_REACK(UartInstance))))
 		;
 #endif /* !CONFIG_SOC_SERIES_STM32F4X */
 
@@ -406,7 +403,7 @@ UART_DEVICE_INIT_STM32(8, STM32_CLOCK_BUS_APB1_2, LL_APB1_GRP2_PERIPH_USART8)
 #else /* CONFIG_SOC_SERIES_STM32F0X */
 
 #ifdef CONFIG_UART_STM32_PORT_1
-UART_DEVICE_INIT_STM32(1, STM32_CLOCK_BUS_APB2, LL_APB2_GRP1_PERIPH_USART1)
+UART_DEVICE_INIT_STM32(1, STM32_CLOCK_BUS_APB1_2, LL_APB1_GRP2_PERIPH_LPUART1)
 #endif	/* CONFIG_UART_STM32_PORT_1 */
 
 #ifdef CONFIG_UART_STM32_PORT_2
