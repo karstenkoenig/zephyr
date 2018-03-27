@@ -64,6 +64,13 @@ static int enable_port(u32_t port, struct device *clk)
 	pclken.bus = STM32_CLOCK_BUS_GPIO;
 	pclken.enr = ports_enable[port];
 
+#if defined(PWR_CR2_IOSV)
+	if (port == 6) { // Port G, assume pin 2 to 15 is used
+		LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
+		SET_BIT(PWR->CR2, PWR_CR2_IOSV);
+	}
+#endif
+
 	return clock_control_on(clk, (clock_control_subsys_t *) &pclken);
 }
 
