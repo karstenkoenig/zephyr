@@ -17,6 +17,8 @@ struct uart_stm32_config {
 	struct uart_device_config uconf;
 	/* clock subsystem driving this peripheral */
 	struct stm32_pclken pclken;
+	/* LPUARTs is slightly different */
+	bool is_lpuart;
 };
 
 /* driver data */
