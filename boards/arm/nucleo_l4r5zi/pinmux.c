@@ -10,7 +10,7 @@
 #include <init.h>
 #include <pinmux.h>
 #include <sys_io.h>
-
+#include <soc.h>
 #include <pinmux/stm32/pinmux_stm32.h>
 
 /* pin assignments for NUCLEO-L4R5ZI board */
@@ -63,6 +63,16 @@ static int pinmux_stm32_init(struct device *port)
 	ARG_UNUSED(port);
 
 	stm32_setup_pins(pinconf, ARRAY_SIZE(pinconf));
+
+	/* Enable the VddIO2 rail without double checking.
+	 *
+	 * It is needed for PG[15:2] pins, which includes is LPUART1 PG7 and PG8
+	 * are connected to the VCOM of the ST-Link
+	 * For further information check 'Independent I/O supply rail' in the
+	 * reference manual.
+	 * */
+	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
+	SET_BIT(PWR->CR2, PWR_CR2_IOSV);
 
 	return 0;
 }
