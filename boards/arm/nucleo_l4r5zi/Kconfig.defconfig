@@ -16,6 +16,9 @@ if UART_CONSOLE
 config UART_STM32_PORT_11
 	default y
 
+config UART_INTERRUPT_DRIVEN
+	default y
+
 endif # UART_CONSOLE
 
 if SPI
