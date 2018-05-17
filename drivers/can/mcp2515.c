@@ -126,8 +126,8 @@ static const struct mcp2515_config mcp2515_config_1 = {
 };
 
 DEVICE_AND_API_INIT(can_mcp2515_1, CONFIG_CAN_MCP2515_NAME, &mcp2515_init,
-		    &mcp2515_data_1, &mcp2515_config_1,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &can_api_funcs);
+		&mcp2515_data_1, &mcp2515_config_1,
+		POST_KERNEL, CONFIG_CAN_MCP2515_INIT_PRIORITY,
+		&can_api_funcs);
 
 #endif /* CONFIG_CAN_1 */

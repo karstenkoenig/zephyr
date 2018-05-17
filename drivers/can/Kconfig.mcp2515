@@ -62,6 +62,12 @@ config CAN_MCP2515_SPI_CS_PIN
 	  This option is mandatory to set which GPIO pin to use in order
 	  to actually emulate the SPI CS.
 
+config CAN_MCP2515_INIT_PRIORITY
+	int "Init priority"
+	default 80
+	help
+	  MCP2515 driver initialization priority, must be higher than SPI.
+
 endif # CAN_MCP2515
 	  
 	  
