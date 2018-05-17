@@ -12,3 +12,56 @@ config CAN_MCP2515
 	depends on SPI
 	help
 	  Enable MCP2515 CAN Driver
+
+if CAN_MCP2515
+
+config CAN_MCP2515_NAME
+	string "Driver name"
+	default "MCP2515"
+	
+config CAN_MCP2515_SPI_PORT_NAME
+	string "SPI device where MCP2515 is connected"
+	default "SPI_1"
+	help
+	 Specify the device name of the SPI device to which MCP2515 is
+	 connected.
+
+config CAN_MCP2515_SPI_SLAVE
+	int "SPI Slave Select where MCP2515 is connected"
+	default 1
+	help
+	 Specify the slave select pin of the SPI to which MCP2515 is
+	 connected.
+
+config CAN_MCP2515_SPI_FREQ
+	int "SPI frequency to use with MCP2515"
+	default 8000000
+	help
+	 SPI frequency to use with MCP2515
+
+config CAN_MCP2515_GPIO_SPI_CS
+	bool "Manage SPI CS through a GPIO pin"
+	default n
+	help
+	  This option is useful if one needs to manage SPI CS through a GPIO
+	  pin to by-pass the SPI controller's CS logic.
+
+config CAN_MCP2515_SPI_CS_PORT_NAME
+	string "GPIO driver's name to use to drive SPI CS through"
+	default ""
+	depends on CAN_MCP2515_GPIO_SPI_CS
+	help
+	  This option is mandatory to set which GPIO controller to use in
+	  order to actually emulate the SPI CS.
+
+config CAN_MCP2515_SPI_CS_PIN
+	int "GPIO PIN to use to drive SPI CS through"
+	default 0
+	depends on CAN_MCP2515_GPIO_SPI_CS
+	help
+	  This option is mandatory to set which GPIO pin to use in order
+	  to actually emulate the SPI CS.
+
+endif # CAN_MCP2515
+	  
+	  
