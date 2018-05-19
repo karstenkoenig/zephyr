@@ -16,7 +16,7 @@ source "$ZEPHYR_BASE/Kconfig.zephyr"
 
 config CAN_DEV
 	string "Name of the CAN device"
-	default "CAN_1"
+	default "MCP2515"
 	help
 	  Name of the can device used for send an receive.
 

@@ -35,7 +35,7 @@ config CAN_MCP2515_SPI_SLAVE
 
 config CAN_MCP2515_SPI_FREQ
 	int "SPI frequency to use with MCP2515"
-	default 8000000
+	default 1000000
 	help
 	 SPI frequency to use with MCP2515
 
