@@ -35,6 +35,87 @@ struct mcp2515_config {
 struct spi_cs_control mcp2515_cs_ctrl;
 #endif
 
+#define MCP2515_OPCODE_RESET	0xC0
+#define MCP2515_OPCODE_READ		0x03
+#define MCP2515_OPCODE_WRITE	0x02
+
+static int mcp2515_soft_reset(struct device *dev)
+{
+	struct mcp2515_data *data = DEV_DATA(dev);
+	u8_t opcode_buf[1] = { MCP2515_OPCODE_RESET };
+	const struct spi_buf tx_buf = {
+		.buf = opcode_buf,
+		.len = 1,
+	};
+	const struct spi_buf_set tx = {
+		.buffers = &tx_buf,
+		.count = 1
+	};
+
+	return spi_write(data->spi, &data->spi_cfg, &tx);
+}
+
+static int mcp2515_write_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u8_t buf_len)
+{
+	struct mcp2515_data *data = DEV_DATA(dev);
+
+	u8_t opcode_buf[2];
+	opcode_buf[0] = MCP2515_OPCODE_WRITE;
+	opcode_buf[1] = reg_addr;
+
+	struct spi_buf tx_buf[2];
+
+	tx_buf[0].buf = opcode_buf;
+	tx_buf[0].len = 2;
+
+	tx_buf[1].buf = buf_data;
+	tx_buf[1].len = buf_len;
+
+	const struct spi_buf_set tx = {
+		.buffers = tx_buf,
+		.count = 2
+	};
+
+	return spi_write(data->spi, &data->spi_cfg, &tx);
+}
+
+
+static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u8_t buf_len)
+{
+	struct mcp2515_data *data = DEV_DATA(dev);
+
+	u8_t opcode_buf[2];
+	opcode_buf[0] = MCP2515_OPCODE_READ;
+	opcode_buf[1] = reg_addr;
+
+	struct spi_buf tx_buf[2];
+
+	tx_buf[0].buf = opcode_buf;
+	tx_buf[0].len = 2;
+
+	tx_buf[1].buf = NULL;
+	tx_buf[1].len = buf_len;
+
+	const struct spi_buf_set tx = {
+		.buffers = tx_buf,
+		.count = 2
+	};
+
+	struct spi_buf rx_buf[2];
+
+	rx_buf[0].buf = NULL;
+	rx_buf[0].len = 2;
+
+	rx_buf[1].buf = buf_data;
+	rx_buf[1].len = buf_len;
+
+	const struct spi_buf_set rx = {
+		.buffers = rx_buf,
+		.count = 2
+	};
+
+	return spi_transceive(data->spi, &data->spi_cfg, &tx, &rx);
+}
 
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
@@ -107,6 +188,12 @@ static int mcp2515_init(struct device *dev)
 #else
 	data->spi_cfg.cs = NULL;
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
+
+	if (mcp2515_soft_reset(dev)) {
+		SYS_LOG_ERR("Soft-reset failed");
+
+		return -EIO;
+	}
 
 	return 0;
 }
