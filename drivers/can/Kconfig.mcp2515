@@ -58,10 +58,10 @@ config CAN_MCP2515_GPIO_SPI_CS
 	  This option is useful if one needs to manage SPI CS through a GPIO
 	  pin to by-pass the SPI controller's CS logic.
 
+if CAN_MCP2515_GPIO_SPI_CS
 config CAN_MCP2515_SPI_CS_PORT_NAME
 	string "GPIO driver's name to use to drive SPI CS through"
 	default ""
-	depends on CAN_MCP2515_GPIO_SPI_CS
 	help
 	  This option is mandatory to set which GPIO controller to use in
 	  order to actually emulate the SPI CS.
@@ -69,10 +69,11 @@ config CAN_MCP2515_SPI_CS_PORT_NAME
 config CAN_MCP2515_SPI_CS_PIN
 	int "GPIO PIN to use to drive SPI CS through"
 	default 0
-	depends on CAN_MCP2515_GPIO_SPI_CS
 	help
 	  This option is mandatory to set which GPIO pin to use in order
 	  to actually emulate the SPI CS.
+
+endif #CAN_MCP2515_GPIO_SPI_CS
 
 config CAN_MCP2515_INIT_PRIORITY
 	int "Init priority"
