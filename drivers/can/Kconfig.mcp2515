@@ -39,6 +39,18 @@ config CAN_MCP2515_SPI_FREQ
 	help
 	 SPI frequency to use with MCP2515
 
+config CAN_MCP2515_INT_PORT_NAME
+	string "GPIO controller port name"
+	default "GPIO_0"
+	help
+	  GPIO port where INT is connected.
+
+config CAN_MCP2515_INT_PIN
+	int "GPIO pin"
+	default 19
+	help
+	  GPIO pin where INT is connected.
+
 config CAN_MCP2515_GPIO_SPI_CS
 	bool "Manage SPI CS through a GPIO pin"
 	default n

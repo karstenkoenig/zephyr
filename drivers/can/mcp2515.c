@@ -7,7 +7,8 @@
 #include <kernel.h>
 #include <device.h>
 #include <spi.h>
-#include "can.h"
+#include <gpio.h>
+#include <can.h>
 
 #define SYS_LOG_LEVEL CONFIG_SYS_LOG_CAN_LEVEL
 #include <logging/sys_log.h>
@@ -21,10 +22,14 @@
 struct mcp2515_data {
 	struct device *spi;
 	struct spi_config spi_cfg;
+	struct device *int_gpio;
+	struct gpio_callback int_gpio_cb;
 };
 
 struct mcp2515_config {
 	const char *spi_port;
+	u8_t int_pin;
+	const char *int_port;
 	u8_t spi_cs_pin;
 	const char *spi_cs_port;
 	u32_t spi_freq;
@@ -149,6 +154,12 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 
 }
 
+static void mcp2514_int_gpio_callback(struct device *dev,
+				       struct gpio_callback *cb,
+				       u32_t pins)
+{
+}
+
 static const struct can_driver_api can_api_funcs = {
 	.configure = mcp2515_configure,
 	.send = mcp2515_send,
@@ -189,6 +200,33 @@ static int mcp2515_init(struct device *dev)
 	data->spi_cfg.cs = NULL;
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
 
+
+	/* Initialize INT GPIO */
+	data->int_gpio = device_get_binding(cfg->int_port);
+	if (data->int_gpio == NULL) {
+		SYS_LOG_ERR("GPIO port %s not found", cfg->int_port);
+		return -EINVAL;
+	}
+
+	if (gpio_pin_configure(data->int_gpio, cfg->int_pin,
+			       (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE
+			       | GPIO_INT_ACTIVE_LOW | GPIO_INT_DEBOUNCE))) {
+		SYS_LOG_ERR("Unable to configure GPIO pin %u",
+				cfg->int_pin);
+		return -EINVAL;
+	}
+
+	gpio_init_callback(&(data->int_gpio_cb), mcp2514_int_gpio_callback,
+			   BIT(cfg->int_pin));
+
+	if (gpio_add_callback(data->int_gpio, &(data->int_gpio_cb))) {
+		return -EINVAL;
+	}
+
+	if (gpio_pin_enable_callback(data->int_gpio, cfg->int_pin)) {
+		return -EINVAL;
+	}
+
 	if (mcp2515_soft_reset(dev)) {
 		SYS_LOG_ERR("Soft-reset failed");
 
@@ -206,9 +244,11 @@ static const struct mcp2515_config mcp2515_config_1 = {
 	.spi_port = CONFIG_CAN_MCP2515_SPI_PORT_NAME,
 	.spi_freq = CONFIG_CAN_MCP2515_SPI_FREQ,
 	.spi_slave = CONFIG_CAN_MCP2515_SPI_SLAVE,
+	.int_pin = CONFIG_CAN_MCP2515_INT_PIN,
+	.int_port = CONFIG_CAN_MCP2515_INT_PORT_NAME,
 #ifdef CONFIG_CAN_MCP2515_GPIO_SPI_CS
-	.spi_cs_port = CONFIG_CAN_MCP2515_SPI_CS_PORT_NAME,
 	.spi_cs_pin = CONFIG_CAN_MCP2515_SPI_CS_PIN,
+	.spi_cs_port = CONFIG_CAN_MCP2515_SPI_CS_PORT_NAME,
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
 };
 
