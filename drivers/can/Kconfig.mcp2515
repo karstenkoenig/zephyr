@@ -58,6 +58,20 @@ config CAN_MCP2515_GPIO_SPI_CS
 	  This option is useful if one needs to manage SPI CS through a GPIO
 	  pin to by-pass the SPI controller's CS logic.
 
+config CAN_MCP2515_INT_THREAD_STACK_SIZE
+	int "Stack size for interrupt handler"
+	default 256
+	help
+	  Size of the stack used for internal thread which is ran for
+	  interrupt handling and incomming packets.
+
+config CAN_MCP2515_INT_THREAD_PRIO
+	int "Priority for interrupt handler"
+	default 2
+	help
+	  Priority level of the internal thread which is ran for
+	  interrupt handling and incomming packets.
+
 if CAN_MCP2515_GPIO_SPI_CS
 config CAN_MCP2515_SPI_CS_PORT_NAME
 	string "GPIO driver's name to use to drive SPI CS through"

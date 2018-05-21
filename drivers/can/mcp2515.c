@@ -24,12 +24,16 @@ struct mcp2515_data {
 	struct spi_config spi_cfg;
 	struct device *int_gpio;
 	struct gpio_callback int_gpio_cb;
+	struct k_thread int_thread;
+	k_thread_stack_t *int_thread_stack;
 };
 
 struct mcp2515_config {
 	const char *spi_port;
 	u8_t int_pin;
 	const char *int_port;
+	size_t int_thread_stack_size;
+	int int_thread_priority;
 	u8_t spi_cs_pin;
 	const char *spi_cs_port;
 	u32_t spi_freq;
@@ -154,6 +158,13 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 
 }
 
+static void mcp2514_int_thread(struct device *dev)
+{
+	while (true) {
+
+	}
+}
+
 static void mcp2514_int_gpio_callback(struct device *dev,
 				       struct gpio_callback *cb,
 				       u32_t pins)
@@ -233,12 +244,22 @@ static int mcp2515_init(struct device *dev)
 		return -EIO;
 	}
 
+	/* Start interruption handler thread */
+	k_thread_create(&data->int_thread, data->int_thread_stack,
+			cfg->int_thread_stack_size,
+			(k_thread_entry_t) mcp2514_int_thread, (void *)dev, NULL, NULL,
+			K_PRIO_COOP(cfg->int_thread_priority), 0, K_NO_WAIT);
+
 	return 0;
 }
 
 #ifdef CONFIG_CAN_1
 
-static struct mcp2515_data mcp2515_data_1;
+static K_THREAD_STACK_DEFINE(mcp2515_int_thread_stack, CONFIG_CAN_MCP2515_INT_THREAD_STACK_SIZE);
+
+static struct mcp2515_data mcp2515_data_1 = {
+	.int_thread_stack = mcp2515_int_thread_stack,
+};
 
 static const struct mcp2515_config mcp2515_config_1 = {
 	.spi_port = CONFIG_CAN_MCP2515_SPI_PORT_NAME,
@@ -246,6 +267,8 @@ static const struct mcp2515_config mcp2515_config_1 = {
 	.spi_slave = CONFIG_CAN_MCP2515_SPI_SLAVE,
 	.int_pin = CONFIG_CAN_MCP2515_INT_PIN,
 	.int_port = CONFIG_CAN_MCP2515_INT_PORT_NAME,
+	.int_thread_stack_size = CONFIG_CAN_MCP2515_INT_THREAD_STACK_SIZE,
+	.int_thread_priority = CONFIG_CAN_MCP2515_INT_THREAD_PRIO,
 #ifdef CONFIG_CAN_MCP2515_GPIO_SPI_CS
 	.spi_cs_pin = CONFIG_CAN_MCP2515_SPI_CS_PIN,
 	.spi_cs_port = CONFIG_CAN_MCP2515_SPI_CS_PORT_NAME,
