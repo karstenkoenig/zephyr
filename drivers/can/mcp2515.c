@@ -44,13 +44,14 @@ struct mcp2515_config {
 struct spi_cs_control mcp2515_cs_ctrl;
 #endif
 
-#define MCP2515_OPCODE_RESET	0xC0
-#define MCP2515_OPCODE_READ		0x03
-#define MCP2515_OPCODE_WRITE	0x02
+#define MCP2515_OPCODE_WRITE		0x02
+#define MCP2515_OPCODE_READ			0x03
+#define MCP2515_OPCODE_BIT_MODIFY	0x05
+#define MCP2515_OPCODE_RESET		0xC0
 
 static int mcp2515_soft_reset(struct device *dev)
 {
-	struct mcp2515_data *data = DEV_DATA(dev);
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	u8_t opcode_buf[1] = { MCP2515_OPCODE_RESET };
 	const struct spi_buf tx_buf = {
 		.buf = opcode_buf,
@@ -61,12 +62,12 @@ static int mcp2515_soft_reset(struct device *dev)
 		.count = 1
 	};
 
-	return spi_write(data->spi, &data->spi_cfg, &tx);
+	return spi_write(dev_data->spi, &dev_data->spi_cfg, &tx);
 }
 
 static int mcp2515_write_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u8_t buf_len)
 {
-	struct mcp2515_data *data = DEV_DATA(dev);
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
 	u8_t opcode_buf[2];
 	opcode_buf[0] = MCP2515_OPCODE_WRITE;
@@ -85,13 +86,36 @@ static int mcp2515_write_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, 
 		.count = 2
 	};
 
-	return spi_write(data->spi, &data->spi_cfg, &tx);
+	return spi_write(dev_data->spi, &dev_data->spi_cfg, &tx);
+}
+
+static int mcp2515_bit_modify(struct device *dev, u8_t reg_addr, u8_t mask, u8_t data)
+{
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+
+	u8_t cmd_buf[4];
+	cmd_buf[0] = MCP2515_OPCODE_BIT_MODIFY;
+	cmd_buf[1] = reg_addr;
+	cmd_buf[2] = mask;
+	cmd_buf[3] = data;
+
+	struct spi_buf tx_buf[1];
+
+	tx_buf[0].buf = cmd_buf;
+	tx_buf[0].len = 4;
+
+	const struct spi_buf_set tx = {
+		.buffers = tx_buf,
+		.count = 1
+	};
+
+	return spi_write(dev_data->spi, &dev_data->spi_cfg, &tx);
 }
 
 
 static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u8_t buf_len)
 {
-	struct mcp2515_data *data = DEV_DATA(dev);
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
 	u8_t opcode_buf[2];
 	opcode_buf[0] = MCP2515_OPCODE_READ;
@@ -123,8 +147,10 @@ static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u
 		.count = 2
 	};
 
-	return spi_transceive(data->spi, &data->spi_cfg, &tx, &rx);
+	return spi_transceive(dev_data->spi, &dev_data->spi_cfg, &tx, &rx);
 }
+
+
 
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
@@ -182,22 +208,22 @@ static const struct can_driver_api can_api_funcs = {
 
 static int mcp2515_init(struct device *dev)
 {
-	const struct mcp2515_config *cfg = DEV_CFG(dev);
-	struct mcp2515_data *data = DEV_DATA(dev);
+	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
 	/* SPI config */
-	data->spi_cfg.operation = SPI_WORD_SET(8);
-	data->spi_cfg.frequency = cfg->spi_freq;
-	data->spi_cfg.slave = cfg->spi_slave;
+	dev_data->spi_cfg.operation = SPI_WORD_SET(8);
+	dev_data->spi_cfg.frequency = dev_cfg->spi_freq;
+	dev_data->spi_cfg.slave = dev_cfg->spi_slave;
 
-	data->spi = device_get_binding(cfg->spi_port);
-	if (!data->spi) {
-		SYS_LOG_ERR("SPI master port %s not found", cfg->spi_port);
+	dev_data->spi = device_get_binding(dev_cfg->spi_port);
+	if (!dev_data->spi) {
+		SYS_LOG_ERR("SPI master port %s not found", dev_cfg->spi_port);
 		return -EINVAL;
 	}
 
 #ifdef CAN_MCP2515_GPIO_SPI_CS
-	mcp2515_cs_ctrl.gpio_dev = device_get_binding(cfg->spi_cs_port);
+	mcp2515_cs_ctrl.gpio_dev = device_get_binding(dev_cfg->spi_cs_port);
 	if (!mcp2515_cs_ctrl.gpio_dev) {
 		SYS_LOG_ERR("Unable to get GPIO SPI CS device");
 		return -ENODEV;
@@ -206,35 +232,35 @@ static int mcp2515_init(struct device *dev)
 	mcp2515_cs_ctrl.gpio_pin = CONFIG_MCP2515_GPIO_SPI_CS_PIN;
 	mcp2515_cs_ctrl.delay = 0;
 
-	data->spi_cfg.cs = &mcp2515_cs_ctrl;
+	dev_data->spi_cfg.cs = &mcp2515_cs_ctrl;
 #else
-	data->spi_cfg.cs = NULL;
+	dev_data->spi_cfg.cs = NULL;
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
 
 
 	/* Initialize INT GPIO */
-	data->int_gpio = device_get_binding(cfg->int_port);
-	if (data->int_gpio == NULL) {
-		SYS_LOG_ERR("GPIO port %s not found", cfg->int_port);
+	dev_data->int_gpio = device_get_binding(dev_cfg->int_port);
+	if (dev_data->int_gpio == NULL) {
+		SYS_LOG_ERR("GPIO port %s not found", dev_cfg->int_port);
 		return -EINVAL;
 	}
 
-	if (gpio_pin_configure(data->int_gpio, cfg->int_pin,
+	if (gpio_pin_configure(dev_data->int_gpio, dev_cfg->int_pin,
 			       (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE
 			       | GPIO_INT_ACTIVE_LOW | GPIO_INT_DEBOUNCE))) {
 		SYS_LOG_ERR("Unable to configure GPIO pin %u",
-				cfg->int_pin);
+				dev_cfg->int_pin);
 		return -EINVAL;
 	}
 
-	gpio_init_callback(&(data->int_gpio_cb), mcp2514_int_gpio_callback,
-			   BIT(cfg->int_pin));
+	gpio_init_callback(&(dev_data->int_gpio_cb), mcp2514_int_gpio_callback,
+			   BIT(dev_cfg->int_pin));
 
-	if (gpio_add_callback(data->int_gpio, &(data->int_gpio_cb))) {
+	if (gpio_add_callback(dev_data->int_gpio, &(dev_data->int_gpio_cb))) {
 		return -EINVAL;
 	}
 
-	if (gpio_pin_enable_callback(data->int_gpio, cfg->int_pin)) {
+	if (gpio_pin_enable_callback(dev_data->int_gpio, dev_cfg->int_pin)) {
 		return -EINVAL;
 	}
 
@@ -245,10 +271,10 @@ static int mcp2515_init(struct device *dev)
 	}
 
 	/* Start interruption handler thread */
-	k_thread_create(&data->int_thread, data->int_thread_stack,
-			cfg->int_thread_stack_size,
+	k_thread_create(&dev_data->int_thread, dev_data->int_thread_stack,
+			dev_cfg->int_thread_stack_size,
 			(k_thread_entry_t) mcp2514_int_thread, (void *)dev, NULL, NULL,
-			K_PRIO_COOP(cfg->int_thread_priority), 0, K_NO_WAIT);
+			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
 
 	return 0;
 }
