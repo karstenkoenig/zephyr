@@ -26,6 +26,7 @@ struct mcp2515_data {
 	struct gpio_callback int_gpio_cb;
 	struct k_thread int_thread;
 	k_thread_stack_t *int_thread_stack;
+	enum can_mode mode;
 };
 
 struct mcp2515_config {
@@ -48,6 +49,21 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_OPCODE_READ			0x03
 #define MCP2515_OPCODE_BIT_MODIFY	0x05
 #define MCP2515_OPCODE_RESET		0xC0
+
+
+#define MCP2515_ADDR_CANSTAT		0x0E
+#define MCP2515_ADDR_CANCTRL		0x0F
+#define MCP2515_ADDR_CNF3			0x28
+#define MCP2515_ADDR_CNF2			0x29
+#define MCP2515_ADDR_CNF1			0x2A
+#define MCP2515_ADDR_CANINTE		0x2B
+#define MCP2515_ADDR_CANINTF		0x2C
+
+#define MCP2515_MODE_NORMAL			0x00
+#define MCP2515_MODE_LOOPBACK		0x02
+#define MCP2515_MODE_SILENT			0x03
+#define MCP2515_MODE_CONFIGURATION	0x04
+
 
 static int mcp2515_soft_reset(struct device *dev)
 {
@@ -150,13 +166,86 @@ static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u
 	return spi_transceive(dev_data->spi, &dev_data->spi_cfg, &tx, &rx);
 }
 
+const int mcp2515_request_operation_mode(struct device *dev, u8_t mode)
+{
+	mcp2515_bit_modify(dev, MCP2515_ADDR_CANCTRL, 0x07 << 5, mode << 5);
 
+	u8_t canctrl;
+	mcp2515_read_reg(dev, MCP2515_ADDR_CANCTRL, &canctrl, 1);
+
+	if ((canctrl >> 5) != mode) {
+		SYS_LOG_ERR("Failed to set MCP2515 operation mode");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static u8_t mcp2515_get_mcp2515_opmode(enum can_mode mode)
+{
+	switch (mode) {
+	case CAN_NORMAL_MODE:
+		return MCP2515_MODE_NORMAL;
+	case CAN_SILENT_MODE:
+		return MCP2515_MODE_SILENT;
+	case CAN_LOOPBACK_MODE:
+		return MCP2515_MODE_LOOPBACK;
+	default:
+		SYS_LOG_ERR("Unsupported CAN Mode %u", mode);
+		return MCP2515_MODE_SILENT;
+	}
+}
 
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
 {
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
-	return -EIO;
+	u8_t config_buf[4]; // CNF3, CNF2, CNF1, CANINTE
+
+	mcp2515_soft_reset(dev); // will enter configuration mode
+
+#warning implement validation - modes and Time quants
+
+	// CNF1; SJW<7:6> | BRP<5:0>
+	const u8_t sjw = (CONFIG_CAN_SJW - 1) << 6;
+	const u8_t bit_length = 1 + CONFIG_CAN_PROP_SEG + CONFIG_CAN_PHASE_SEG1 +
+			CONFIG_CAN_PHASE_SEG2;
+	// This could create a terrible bitrate for badly chosen parameters
+	u8_t brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
+
+	u8_t cnf1 = sjw | brp;
+
+	// CNF2; BTLMODE<7>|SAM<6>|PHSEG1<5:3>|PRSEG<2:0>
+	const u8_t btlmode = 1 << 7;
+	const u8_t sam = 0 << 6;
+	const u8_t phseg1 = (CONFIG_CAN_PHASE_SEG1 - 1) << 3;
+	const u8_t prseg = (CONFIG_CAN_PROP_SEG - 1);
+
+	const u8_t cnf2 = btlmode | sam | phseg1 | prseg;
+
+	// CNF3; SOF<7>|WAKFIL<6>|UND<5:3>|PHSEG2<2:0>
+	const u8_t sof = 0 << 7;
+	const u8_t wakfil = 0 << 6;
+	const u8_t und = 0 << 3;
+	const u8_t phseg2 = (CONFIG_CAN_PHASE_SEG2 - 1);
+
+	const u8_t cnf3 = sof | wakfil | und | phseg2;
+
+	// CANINTE
+	// MERRE<7>:WAKIE<6>:ERRIE<5>:TX2IE<4>:TX1IE<3>:TX0IE<2>:RX1IE<1>:RX0IE<0>
+	const u8_t caninte = 0x1F; // all TX and RX buffer interrupts
+
+
+	config_buf[0] = cnf3;
+	config_buf[1] = cnf2;
+	config_buf[2] = cnf1;
+	config_buf[3] = caninte;
+
+	mcp2515_write_reg(dev, MCP2515_ADDR_CNF3, config_buf, 4);
+
+	dev_data->mode = mode;
+	return mcp2515_request_operation_mode(dev, mcp2515_get_mcp2515_opmode(mode));
 }
 
 int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
@@ -210,6 +299,8 @@ static int mcp2515_init(struct device *dev)
 {
 	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
+
+	dev_data->mode = CAN_SILENT_MODE;
 
 	/* SPI config */
 	dev_data->spi_cfg.operation = SPI_WORD_SET(8);

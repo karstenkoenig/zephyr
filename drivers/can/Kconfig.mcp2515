@@ -18,6 +18,12 @@ if CAN_MCP2515
 config CAN_MCP2515_NAME
 	string "Driver name"
 	default "MCP2515"
+
+config CAN_MCP2515_OSC_FREQ
+	int "Oscillator frequency"
+	default 8000000
+	help
+	 Specify the frequency of the oscillator connected to the MCP2515.
 	
 config CAN_MCP2515_SPI_PORT_NAME
 	string "SPI device where MCP2515 is connected"

@@ -47,6 +47,5 @@ config CAN_1
 	  Enable CAN controller 1
 
 source "drivers/can/Kconfig.stm32"
-source "drivers/can/Kconfig.mcp2515"
 
 endif # CAN
