@@ -170,10 +170,10 @@ const int mcp2515_request_operation_mode(struct device *dev, u8_t mode)
 {
 	mcp2515_bit_modify(dev, MCP2515_ADDR_CANCTRL, 0x07 << 5, mode << 5);
 
-	u8_t canctrl;
-	mcp2515_read_reg(dev, MCP2515_ADDR_CANCTRL, &canctrl, 1);
+	u8_t canstat;
+	mcp2515_read_reg(dev, MCP2515_ADDR_CANSTAT, &canstat, 1);
 
-	if ((canctrl >> 5) != mode) {
+	if ((canstat >> 5) != mode) {
 		SYS_LOG_ERR("Failed to set MCP2515 operation mode");
 		return -EIO;
 	}
