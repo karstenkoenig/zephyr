@@ -26,6 +26,8 @@ struct mcp2515_data {
 	struct gpio_callback int_gpio_cb;
 	struct k_thread int_thread;
 	k_thread_stack_t *int_thread_stack;
+	struct k_sem int_sem;
+
 	enum can_mode mode;
 };
 
@@ -48,6 +50,7 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_OPCODE_WRITE		0x02
 #define MCP2515_OPCODE_READ			0x03
 #define MCP2515_OPCODE_BIT_MODIFY	0x05
+#define MCP2515_OPCODE_READ_STATUS	0xA0
 #define MCP2515_OPCODE_RESET		0xC0
 
 
@@ -63,6 +66,16 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_MODE_LOOPBACK		0x02
 #define MCP2515_MODE_SILENT			0x03
 #define MCP2515_MODE_CONFIGURATION	0x04
+
+/* MC2515_STATUS */
+#define MC2515_STATUS_RX0IF			BIT(0)
+#define MC2515_STATUS_RX1IF			BIT(1)
+#define MC2515_STATUS_TX0REQ		BIT(2)
+#define MC2515_STATUS_TX0IF			BIT(3)
+#define MC2515_STATUS_TX1REQ		BIT(4)
+#define MC2515_STATUS_TX1IF			BIT(5)
+#define MC2515_STATUS_TX2REQ		BIT(6)
+#define MC2515_STATUS_TX2IF			BIT(7)
 
 
 static int mcp2515_soft_reset(struct device *dev)
@@ -157,6 +170,35 @@ static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u
 
 	rx_buf[1].buf = buf_data;
 	rx_buf[1].len = buf_len;
+
+	const struct spi_buf_set rx = {
+		.buffers = rx_buf,
+		.count = 2
+	};
+
+	return spi_transceive(dev_data->spi, &dev_data->spi_cfg, &tx, &rx);
+}
+
+static int mcp2515_read_status(struct device *dev, u8_t* status)
+{
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	u8_t opcode_buf[2] = { MCP2515_OPCODE_READ_STATUS , NULL};
+	const struct spi_buf tx_buf = {
+		.buf = opcode_buf,
+		.len = 2,
+	};
+	const struct spi_buf_set tx = {
+		.buffers = &tx_buf,
+		.count = 1
+	};
+
+	struct spi_buf rx_buf[2];
+
+	rx_buf[0].buf = NULL;
+	rx_buf[0].len = 1;
+
+	rx_buf[1].buf = status;
+	rx_buf[1].len = 1;
 
 	const struct spi_buf_set rx = {
 		.buffers = rx_buf,
@@ -272,18 +314,38 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 {
 
 }
+static void mcp2515_rx(struct device *dev) {
 
-static void mcp2514_int_thread(struct device *dev)
+}
+static void mcp2515_handle_interrupts(struct device *dev)
 {
-	while (true) {
+	u8_t status;
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	mcp2515_read_status(dev, &status);
 
+	if (status & (MC2515_STATUS_RX0IF | MC2515_STATUS_RX1IF)) {
+		mcp2515_rx(dev);
+	}
+
+}
+
+static void mcp2515_int_thread(struct device *dev)
+{
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	while (1) {
+		k_sem_take(&dev_data->int_sem, K_FOREVER);
+		mcp2515_handle_interrupts(dev);
 	}
 }
 
-static void mcp2514_int_gpio_callback(struct device *dev,
+static void mcp2515_int_gpio_callback(struct device *dev,
 				       struct gpio_callback *cb,
 				       u32_t pins)
 {
+	struct mcp2515_data *dev_data =
+		CONTAINER_OF(cb, struct mcp2515_data, int_gpio_cb);
+
+	k_sem_give(&dev_data->int_sem);
 }
 
 static const struct can_driver_api can_api_funcs = {
@@ -344,7 +406,7 @@ static int mcp2515_init(struct device *dev)
 		return -EINVAL;
 	}
 
-	gpio_init_callback(&(dev_data->int_gpio_cb), mcp2514_int_gpio_callback,
+	gpio_init_callback(&(dev_data->int_gpio_cb), mcp2515_int_gpio_callback,
 			   BIT(dev_cfg->int_pin));
 
 	if (gpio_add_callback(dev_data->int_gpio, &(dev_data->int_gpio_cb))) {
@@ -364,7 +426,7 @@ static int mcp2515_init(struct device *dev)
 	/* Start interruption handler thread */
 	k_thread_create(&dev_data->int_thread, dev_data->int_thread_stack,
 			dev_cfg->int_thread_stack_size,
-			(k_thread_entry_t) mcp2514_int_thread, (void *)dev, NULL, NULL,
+			(k_thread_entry_t) mcp2515_int_thread, (void *)dev, NULL, NULL,
 			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
 
 	return 0;
@@ -376,6 +438,8 @@ static K_THREAD_STACK_DEFINE(mcp2515_int_thread_stack, CONFIG_CAN_MCP2515_INT_TH
 
 static struct mcp2515_data mcp2515_data_1 = {
 	.int_thread_stack = mcp2515_int_thread_stack,
+	.int_sem  = _K_SEM_INITIALIZER(mcp2515_data_1.int_sem,
+		       0, UINT_MAX),
 };
 
 static const struct mcp2515_config mcp2515_config_1 = {
