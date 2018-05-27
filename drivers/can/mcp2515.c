@@ -18,6 +18,10 @@
 #define DEV_CFG(dev) ((const struct mcp2515_config *const)(dev)->config->config_info)
 #define DEV_DATA(dev) ((struct mcp2515_data *const)(dev)->driver_data)
 
+struct mcp2515_frame {
+
+};
+
 struct mcp2515_tx_cb {
 	struct k_sem sem;
 	can_tx_callback_t cb;
@@ -33,6 +37,7 @@ struct mcp2515_data {
 	struct k_sem int_sem;
 	struct k_mutex tx_mutex;
 	struct mcp2515_tx_cb tx_cb[MCP2515_TX_CNT];
+	u8_t tx_busy_map;
 	enum can_mode mode;
 };
 
@@ -242,6 +247,16 @@ static u8_t mcp2515_get_mcp2515_opmode(enum can_mode mode)
 	}
 }
 
+static void mcp2515_convert_can_msg_to_mcp2515_frame(const struct can_msg source, struct mcp2515_frame target)
+{
+
+}
+
+static void mcp2515_convert_mcp2515_frame_to_can_msg()
+{
+
+}
+
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
 {
@@ -308,16 +323,17 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
 
-	// find a free tx_fifo
+	// find a free tx slot
 	for (; tx_idx < MCP2515_TX_CNT; tx_idx++) {
-		if (k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_NO_WAIT) == 0) {
+		if ((BIT(tx_idx) & dev_data->tx_busy_map) == 0) {
+			dev_data->tx_busy_map |= BIT(tx_idx);
 			break;
 		}
 	}
 
 	if (tx_idx == MCP2515_TX_CNT) {
 		k_mutex_unlock(&dev_data->tx_mutex);
-		SYS_LOG_WARN("no free tx fifo available");
+		SYS_LOG_WRN("no free tx fifo available");
 		return CAN_TX_ERR;
 	}
 
@@ -326,6 +342,7 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	}
 
 	// SPI send
+
 
 
 	k_mutex_unlock(&dev_data->tx_mutex);
@@ -363,17 +380,48 @@ static void mcp2515_rx(struct device *dev) {
 static void mcp2515_handle_interrupts(struct device *dev)
 {
 	u8_t status;
+	u8_t tx_cleared = 0;
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
 
 	// mcp2515->send() calls can change the status
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
 	mcp2515_read_status(dev, &status);
+	if (BIT(0) & dev_data->tx_busy_map) {
+		if (status & (MCP2515_STATUS_TX0IF)) {
+			tx_cleared |= BIT(0);
+		}
+	}
+	if (BIT(1) & dev_data->tx_busy_map) {
+		if (status & (MCP2515_STATUS_TX1IF)) {
+			tx_cleared |= BIT(1);
+		}
+	}
+	if (BIT(2) & dev_data->tx_busy_map) {
+		if (status & (MCP2515_STATUS_TX2IF)) {
+			tx_cleared |= BIT(2);
+		}
+	}
 	k_mutex_unlock(&dev_data->tx_mutex);
 
 	if (status & (MCP2515_STATUS_RX0IF | MCP2515_STATUS_RX1IF)) {
 		mcp2515_rx(dev);
 	}
+
+	u8_t tx_idx = 0;
+	for (; tx_idx < MCP2515_TX_CNT; tx_idx++) {
+		if (BIT(tx_idx) & tx_cleared) {
+			if (dev_data->tx_cb[tx_idx].cb == NULL) {
+				k_sem_give(&dev_data->tx_cb[tx_idx].sem);
+			} else {
+				dev_data->tx_cb[tx_idx].cb(0); // TODO error feedback
+			}
+		}
+		k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
+		dev_data->tx_busy_map &= ~BIT(tx_idx);
+		k_mutex_unlock(&dev_data->tx_mutex);
+	}
+
 
 
 
@@ -485,6 +533,8 @@ static int mcp2515_init(struct device *dev)
 	k_sem_init(&dev_data->tx_cb[1].sem, 0, 1);
 	dev_data->tx_cb[2].cb = NULL;
 	k_sem_init(&dev_data->tx_cb[2].sem, 0, 1);
+
+	dev_data->tx_busy_map = 0;
 
 	return 0;
 }
