@@ -13,14 +13,11 @@
 #define SYS_LOG_LEVEL CONFIG_SYS_LOG_CAN_LEVEL
 #include <logging/sys_log.h>
 
-#define MCP2515_TX_CNT 	3
+#define MCP2515_TX_CNT 			3
+#define MCP2515_FRAME_LEN		13
 
 #define DEV_CFG(dev) ((const struct mcp2515_config *const)(dev)->config->config_info)
 #define DEV_DATA(dev) ((struct mcp2515_data *const)(dev)->driver_data)
-
-struct mcp2515_frame {
-
-};
 
 struct mcp2515_tx_cb {
 	struct k_sem sem;
@@ -71,11 +68,24 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_ADDR_CNF1			0x2A
 #define MCP2515_ADDR_CANINTE		0x2B
 #define MCP2515_ADDR_CANINTF		0x2C
+#define MCP2515_ADDR_TXB0CTRL		0x30
+#define MCP2515_ADDR_TXB1CTRL		0x40
+#define MCP2515_ADDR_TXB2CTRL		0x50
+#define MCP2515_ADDR_RXB0CTRL		0x60
+#define MCP2515_ADDR_RXB1CTRL		0x70
 
 #define MCP2515_MODE_NORMAL			0x00
 #define MCP2515_MODE_LOOPBACK		0x02
 #define MCP2515_MODE_SILENT			0x03
 #define MCP2515_MODE_CONFIGURATION	0x04
+
+/* MCP2515_FRAME_OFFSET */
+#define MCP2515_FRAME_OFFSET_SIDH	0
+#define MCP2515_FRAME_OFFSET_SIDL	1
+#define MCP2515_FRAME_OFFSET_EID8	2
+#define MCP2515_FRAME_OFFSET_EID0	3
+#define MCP2515_FRAME_OFFSET_DLC	4
+#define MCP2515_FRAME_OFFSET_D0		5
 
 /* MCP2515_STATUS */
 #define MCP2515_STATUS_RX0IF			BIT(0)
@@ -247,8 +257,29 @@ static u8_t mcp2515_get_mcp2515_opmode(enum can_mode mode)
 	}
 }
 
-static void mcp2515_convert_can_msg_to_mcp2515_frame(const struct can_msg source, struct mcp2515_frame target)
+static void mcp2515_convert_can_msg_to_mcp2515_frame(const struct can_msg* source, u8_t* target)
 {
+	if (source->id_type == CAN_STANDARD_IDENTIFIER) {
+		target[MCP2515_FRAME_OFFSET_SIDH] = source->std_id >> 3;
+		target[MCP2515_FRAME_OFFSET_SIDL] = (source->std_id & 0x07) << 5;
+	} else {
+		target[MCP2515_FRAME_OFFSET_SIDH] = source->ext_id >> 21;
+		target[MCP2515_FRAME_OFFSET_SIDL] = (((source->ext_id >> 18) & 0x07) << 5) | (BIT(3)) | ((source->ext_id >> 16) & 0x03);
+		target[MCP2515_FRAME_OFFSET_EID8] = source->ext_id >> 8;
+		target[MCP2515_FRAME_OFFSET_EID0] = source->ext_id;
+	}
+
+	u8_t rtr = 0;
+	if (source->rtr == CAN_REMOTEREQUEST) {
+		rtr = BIT(6);
+	}
+	u8_t dlc = (source->dlc) & 0x07;
+	target[MCP2515_FRAME_OFFSET_DLC] = rtr | dlc;
+
+	u8_t data_idx = 0;
+	for (; data_idx < 8; data_idx++) {
+		target[MCP2515_FRAME_OFFSET_D0 + data_idx] = source->data[data_idx];
+	}
 
 }
 
@@ -312,7 +343,6 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 		   can_tx_callback_t callback)
 {
-
 	int tx_idx = 0;
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
@@ -341,9 +371,11 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 		dev_data->tx_cb[tx_idx].cb = callback;
 	}
 
-	// SPI send
-
-
+	u8_t addr_tx = MCP2515_ADDR_TXB0CTRL + (tx_idx * 0x10);
+	u8_t tx_frame[MCP2515_FRAME_LEN];
+	mcp2515_convert_can_msg_to_mcp2515_frame(msg, tx_frame);
+	mcp2515_write_reg(dev, addr_tx + 1, tx_frame, MCP2515_FRAME_LEN);
+	mcp2515_bit_modify(dev, addr_tx, BIT(3), BIT(3));
 
 	k_mutex_unlock(&dev_data->tx_mutex);
 
