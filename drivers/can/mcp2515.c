@@ -201,7 +201,7 @@ static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u
 static int mcp2515_read_status(struct device *dev, u8_t* status)
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
-	u8_t opcode_buf[2] = { MCP2515_OPCODE_READ_STATUS , NULL};
+	u8_t opcode_buf[2] = { MCP2515_OPCODE_READ_STATUS , 0xFF};
 	const struct spi_buf tx_buf = {
 		.buf = opcode_buf,
 		.len = 2,
@@ -353,7 +353,7 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
 
-	// find a free tx slot
+	/* find a free tx slot */
 	for (; tx_idx < MCP2515_TX_CNT; tx_idx++) {
 		if ((BIT(tx_idx) & dev_data->tx_busy_map) == 0) {
 			dev_data->tx_busy_map |= BIT(tx_idx);
@@ -372,9 +372,11 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	}
 
 	u8_t addr_tx = MCP2515_ADDR_TXB0CTRL + (tx_idx * 0x10);
+	/* copy frame to tx slot register */
 	u8_t tx_frame[MCP2515_FRAME_LEN];
 	mcp2515_convert_can_msg_to_mcp2515_frame(msg, tx_frame);
 	mcp2515_write_reg(dev, addr_tx + 1, tx_frame, MCP2515_FRAME_LEN);
+	/* request tx slot transmission */
 	mcp2515_bit_modify(dev, addr_tx, BIT(3), BIT(3));
 
 	k_mutex_unlock(&dev_data->tx_mutex);
