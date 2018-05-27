@@ -13,11 +13,15 @@
 #define SYS_LOG_LEVEL CONFIG_SYS_LOG_CAN_LEVEL
 #include <logging/sys_log.h>
 
-
+#define MCP2515_TX_CNT 	3
 
 #define DEV_CFG(dev) ((const struct mcp2515_config *const)(dev)->config->config_info)
 #define DEV_DATA(dev) ((struct mcp2515_data *const)(dev)->driver_data)
 
+struct mcp2515_tx_cb {
+	struct k_sem sem;
+	can_tx_callback_t cb;
+};
 
 struct mcp2515_data {
 	struct device *spi;
@@ -27,7 +31,8 @@ struct mcp2515_data {
 	struct k_thread int_thread;
 	k_thread_stack_t *int_thread_stack;
 	struct k_sem int_sem;
-
+	struct k_mutex tx_mutex;
+	struct mcp2515_tx_cb tx_cb[MCP2515_TX_CNT];
 	enum can_mode mode;
 };
 
@@ -67,16 +72,15 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_MODE_SILENT			0x03
 #define MCP2515_MODE_CONFIGURATION	0x04
 
-/* MC2515_STATUS */
-#define MC2515_STATUS_RX0IF			BIT(0)
-#define MC2515_STATUS_RX1IF			BIT(1)
-#define MC2515_STATUS_TX0REQ		BIT(2)
-#define MC2515_STATUS_TX0IF			BIT(3)
-#define MC2515_STATUS_TX1REQ		BIT(4)
-#define MC2515_STATUS_TX1IF			BIT(5)
-#define MC2515_STATUS_TX2REQ		BIT(6)
-#define MC2515_STATUS_TX2IF			BIT(7)
-
+/* MCP2515_STATUS */
+#define MCP2515_STATUS_RX0IF			BIT(0)
+#define MCP2515_STATUS_RX1IF			BIT(1)
+#define MCP2515_STATUS_TX0REQ			BIT(2)
+#define MCP2515_STATUS_TX0IF			BIT(3)
+#define MCP2515_STATUS_TX1REQ			BIT(4)
+#define MCP2515_STATUS_TX1IF			BIT(5)
+#define MCP2515_STATUS_TX2REQ			BIT(6)
+#define MCP2515_STATUS_TX2IF			BIT(7)
 
 static int mcp2515_soft_reset(struct device *dev)
 {
@@ -293,7 +297,46 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 		   can_tx_callback_t callback)
 {
-	return CAN_TX_UNKNOWN;
+
+	int tx_idx = 0;
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+
+	if (timeout != K_NO_WAIT) {
+		SYS_LOG_ERR("mcp2515_send timeout not supported");
+		return CAN_TX_UNKNOWN;
+	}
+
+	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
+
+	// find a free tx_fifo
+	for (; tx_idx < MCP2515_TX_CNT; tx_idx++) {
+		if (k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_NO_WAIT) == 0) {
+			break;
+		}
+	}
+
+	if (tx_idx == MCP2515_TX_CNT) {
+		k_mutex_unlock(&dev_data->tx_mutex);
+		SYS_LOG_WARN("no free tx fifo available");
+		return CAN_TX_ERR;
+	}
+
+	if (callback != NULL) {
+		dev_data->tx_cb[tx_idx].cb = callback;
+	}
+
+	// SPI send
+
+
+	k_mutex_unlock(&dev_data->tx_mutex);
+
+	if (callback == NULL) {
+		k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_FOREVER);
+		k_sem_give(&dev_data->tx_cb[tx_idx].sem);
+		return 0;
+	}
+
+	return 0;
 }
 
 
@@ -321,11 +364,18 @@ static void mcp2515_handle_interrupts(struct device *dev)
 {
 	u8_t status;
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
-	mcp2515_read_status(dev, &status);
 
-	if (status & (MC2515_STATUS_RX0IF | MC2515_STATUS_RX1IF)) {
+
+	// mcp2515->send() calls can change the status
+	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
+	mcp2515_read_status(dev, &status);
+	k_mutex_unlock(&dev_data->tx_mutex);
+
+	if (status & (MCP2515_STATUS_RX0IF | MCP2515_STATUS_RX1IF)) {
 		mcp2515_rx(dev);
 	}
+
+
 
 }
 
@@ -428,6 +478,13 @@ static int mcp2515_init(struct device *dev)
 			dev_cfg->int_thread_stack_size,
 			(k_thread_entry_t) mcp2515_int_thread, (void *)dev, NULL, NULL,
 			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
+
+	dev_data->tx_cb[0].cb = NULL;
+	k_sem_init(&dev_data->tx_cb[0].sem, 0, 1);
+	dev_data->tx_cb[1].cb = NULL;
+	k_sem_init(&dev_data->tx_cb[1].sem, 0, 1);
+	dev_data->tx_cb[2].cb = NULL;
+	k_sem_init(&dev_data->tx_cb[2].sem, 0, 1);
 
 	return 0;
 }
