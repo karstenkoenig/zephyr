@@ -280,12 +280,32 @@ static void mcp2515_convert_can_msg_to_mcp2515_frame(const struct can_msg* sourc
 	for (; data_idx < 8; data_idx++) {
 		target[MCP2515_FRAME_OFFSET_D0 + data_idx] = source->data[data_idx];
 	}
-
 }
 
-static void mcp2515_convert_mcp2515_frame_to_can_msg()
+static void mcp2515_convert_mcp2515_frame_to_can_msg(const u8_t* source, struct can_msg* target)
 {
+	if (source[MCP2515_FRAME_OFFSET_SIDL] & BIT(3)) {
+		/* Extended Identifier */
+		target->id_type = CAN_EXTENDED_IDENTIFIER;
+		target->ext_id = (source[MCP2515_FRAME_OFFSET_SIDH] << 21) |
+				((source[MCP2515_FRAME_OFFSET_SIDL] >> 5) << 18) |
+				((source[MCP2515_FRAME_OFFSET_SIDL] & 0x03) << 16) |
+				(source[MCP2515_FRAME_OFFSET_EID8] << 8) |
+				source[MCP2515_FRAME_OFFSET_EID0];
 
+	} else {
+		/* Standard Identifier */
+		target->id_type = CAN_STANDARD_IDENTIFIER;
+		target->std_id = (source[MCP2515_FRAME_OFFSET_SIDH] << 3) |
+				(source[MCP2515_FRAME_OFFSET_SIDL] >> 5);
+	}
+	target->dlc = source[MCP2515_FRAME_OFFSET_DLC] & 0x07;
+	target->rtr = source[MCP2515_FRAME_OFFSET_DLC] & BIT(6) ? CAN_REMOTEREQUEST : CAN_DATAFRAME;
+
+	u8_t data_idx = 0;
+	for (; data_idx < 8; data_idx++) {
+		target->data[data_idx] = source[MCP2515_FRAME_OFFSET_D0 + data_idx];
+	}
 }
 
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
@@ -335,6 +355,12 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	config_buf[3] = caninte;
 
 	mcp2515_write_reg(dev, MCP2515_ADDR_CNF3, config_buf, 4);
+
+	/* Receive everything, filtering done in driver, RXB0 roll over into RXB1 */
+	const u8_t rx0_ctrl = BIT(6) | BIT(5) | BIT(2);
+	mcp2515_bit_modify(dev, MCP2515_ADDR_RXB0CTRL, rx0_ctrl, rx0_ctrl);
+	const u8_t rx1_ctrl = BIT(6) | BIT(5);
+	mcp2515_bit_modify(dev, MCP2515_ADDR_RXB1CTRL, rx1_ctrl, rx1_ctrl);
 
 	dev_data->mode = mode;
 	return mcp2515_request_operation_mode(dev, mcp2515_get_mcp2515_opmode(mode));
