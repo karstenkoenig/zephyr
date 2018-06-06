@@ -36,6 +36,13 @@ struct mcp2515_data {
 	struct mcp2515_tx_cb tx_cb[MCP2515_TX_CNT];
 	u8_t tx_busy_map;
 	enum can_mode mode;
+
+
+	struct k_mutex filter_mutex;
+	u64_t filter_usage;
+	u64_t filter_response_type;
+	void *filter_response[CONFIG_CAN_MAX_FILTER];
+	struct can_filter filter[CONFIG_CAN_MAX_FILTER];
 };
 
 struct mcp2515_config {
@@ -318,6 +325,34 @@ static void mcp2515_convert_mcp2515_frame_to_can_msg(const u8_t* source, struct 
 	}
 }
 
+
+static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
+		void *response_ptr, u8_t is_type_msgq)
+{
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
+	int filter_index = 0;
+	while ((BIT(filter_index) & dev_data->filter_usage) &&
+			(filter_index < CONFIG_CAN_MAX_FILTER)) {
+		filter_index++;
+	}
+	if (filter_index < CONFIG_CAN_MAX_FILTER) {
+		dev_data->filter_usage |= BIT(filter_index);
+		if (is_type_msgq) {
+			dev_data->filter_response_type |= BIT(filter_index);
+		} else {
+			dev_data->filter_response_type &= ~BIT(filter_index);
+		}
+		dev_data->filter[filter_index] = *filter;
+		dev_data->filter_response[filter_index] = response_ptr;
+	} else {
+		filter_index = CAN_NO_FREE_FILTER;
+	}
+	k_mutex_unlock(&dev_data->filter_mutex);
+
+	return filter_index;
+}
+
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
 {
@@ -424,34 +459,77 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	return 0;
 }
 
-
 int mcp2515_attach_msgq(struct device *dev, struct k_msgq *msgq,
 			  const struct can_filter *filter)
 {
-	return CAN_NO_FREE_FILTER;
+	return mcp2515_attach(dev, filter, (void*) msgq, 1);
 }
 
 int mcp2515_attach_isr(struct device *dev, can_rx_callback_t isr,
 			 const struct can_filter *filter)
 {
-
-	return CAN_NO_FREE_FILTER;
+	return mcp2515_attach(dev, filter, (void*) isr, 0);
 }
 
 void mcp2515_detach(struct device *dev, int filter_nr)
 {
-
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
+	dev_data->filter_usage &= ~BIT(filter_nr);
+	k_mutex_unlock(&dev_data->filter_mutex);
 }
-static void mcp2515_rx(struct device *dev, u8_t rx_idx) {
+
+static u8_t mcp2515_filter_match(struct can_msg *msg, struct can_filter *filter)
+{
+	if (msg->id_type == filter->id_type) {
+		return 0;
+	} else {
+		return 0;
+	}
+}
+
+static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
+{
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
+	u8_t filter_index = 0;
+
+	for (; filter_index < CONFIG_CAN_MAX_FILTER; filter_index++) {
+#warning BIT is only 32bits!
+		if (BIT(filter_index) & dev_data->filter_usage) {
+			if (mcp2515_filter_match(msg, &dev_data->filter[filter_index])) {
+
+				if (dev_data->filter_response[filter_index]) {
+					if (dev_data->filter_response_type & BIT(filter_index)) {
+						struct k_msgq *msg_q =
+								dev_data->filter_response[filter_index];
+						k_msgq_put(msg_q, msg, K_NO_WAIT);
+					} else {
+						can_rx_callback_t callback =
+								dev_data->filter_response[filter_index];
+						callback(msg);
+					}
+				}
+
+			}
+		}
+	}
+	k_mutex_unlock(&dev_data->filter_mutex);
+}
+
+static void mcp2515_rx(struct device *dev, u8_t rx_idx)
+{
 	struct can_msg msg;
 	u8_t addr_rx = MCP2515_ADDR_RXB0CTRL + (rx_idx * 0x10);
 	/* copy frame to tx slot register */
 	u8_t rx_frame[MCP2515_FRAME_LEN];
 	mcp2515_read_reg(dev, addr_rx + 1, rx_frame, MCP2515_FRAME_LEN);
 	mcp2515_convert_mcp2515_frame_to_can_msg(rx_frame, &msg);
+
 }
 
-static void mcp2515_tx_done(struct device *dev, u8_t tx_idx) {
+static void mcp2515_tx_done(struct device *dev, u8_t tx_idx)
+{
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	if (dev_data->tx_cb[tx_idx].cb == NULL) {
 		k_sem_give(&dev_data->tx_cb[tx_idx].sem);
@@ -600,8 +678,15 @@ static int mcp2515_init(struct device *dev)
 	dev_data->tx_cb[2].cb = NULL;
 	k_sem_init(&dev_data->tx_cb[2].sem, 0, 1);
 
+	k_mutex_init(&dev_data->tx_mutex);
 	dev_data->tx_busy_map = 0;
 
+
+	k_mutex_init(&dev_data->filter_mutex);
+	dev_data->filter_usage = 0;
+	dev_data->filter_response_type = 0;
+	memset(dev_data->filter_response, 0, sizeof(dev_data->filter_response));
+	memset(dev_data->filter, 0, sizeof(dev_data->filter));
 	return 0;
 }
 
