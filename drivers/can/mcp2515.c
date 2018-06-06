@@ -94,16 +94,6 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_FRAME_OFFSET_DLC	4
 #define MCP2515_FRAME_OFFSET_D0		5
 
-/* MCP2515_STATUS */
-#define MCP2515_STATUS_RX0IF			BIT(0)
-#define MCP2515_STATUS_RX1IF			BIT(1)
-#define MCP2515_STATUS_TX0REQ			BIT(2)
-#define MCP2515_STATUS_TX0IF			BIT(3)
-#define MCP2515_STATUS_TX1REQ			BIT(4)
-#define MCP2515_STATUS_TX1IF			BIT(5)
-#define MCP2515_STATUS_TX2REQ			BIT(6)
-#define MCP2515_STATUS_TX2IF			BIT(7)
-
 /* MCP2515_CANINTF */
 #define MCP2515_CANINTF_RX0IF			BIT(0)
 #define MCP2515_CANINTF_RX1IF			BIT(1)
@@ -206,35 +196,6 @@ static int mcp2515_read_reg(struct device *dev, u8_t reg_addr, u8_t* buf_data, u
 
 	rx_buf[1].buf = buf_data;
 	rx_buf[1].len = buf_len;
-
-	const struct spi_buf_set rx = {
-		.buffers = rx_buf,
-		.count = 2
-	};
-
-	return spi_transceive(dev_data->spi, &dev_data->spi_cfg, &tx, &rx);
-}
-
-static int mcp2515_read_status(struct device *dev, u8_t* status)
-{
-	struct mcp2515_data *dev_data = DEV_DATA(dev);
-	u8_t opcode_buf[2] = { MCP2515_OPCODE_READ_STATUS , 0xFF};
-	const struct spi_buf tx_buf = {
-		.buf = opcode_buf,
-		.len = 2,
-	};
-	const struct spi_buf_set tx = {
-		.buffers = &tx_buf,
-		.count = 1
-	};
-
-	struct spi_buf rx_buf[2];
-
-	rx_buf[0].buf = NULL;
-	rx_buf[0].len = 1;
-
-	rx_buf[1].buf = status;
-	rx_buf[1].len = 1;
 
 	const struct spi_buf_set rx = {
 		.buffers = rx_buf,
