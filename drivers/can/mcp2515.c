@@ -442,11 +442,23 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 
 static u8_t mcp2515_filter_match(struct can_msg *msg, struct can_filter *filter)
 {
-	if (msg->id_type == filter->id_type) {
-		return 0;
-	} else {
+	if (msg->id_type != filter->id_type) {
 		return 0;
 	}
+	if ((msg->rtr ^ filter->rtr) & filter->rtr_mask) {
+		return 0;
+	}
+
+	if (msg->id_type == CAN_STANDARD_IDENTIFIER) {
+		if ((msg->std_id ^ filter->std_id) & filter->std_id_mask) {
+			return 0;
+		}
+	} else {
+		if ((msg->ext_id ^ filter->ext_id) & filter->ext_id_mask) {
+			return 0;
+		}
+	}
+	return 1;
 }
 
 static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
@@ -486,7 +498,7 @@ static void mcp2515_rx(struct device *dev, u8_t rx_idx)
 	u8_t rx_frame[MCP2515_FRAME_LEN];
 	mcp2515_read_reg(dev, addr_rx + 1, rx_frame, MCP2515_FRAME_LEN);
 	mcp2515_convert_mcp2515_frame_to_can_msg(rx_frame, &msg);
-
+	mcp2515_rx_filter(dev, &msg);
 }
 
 static void mcp2515_tx_done(struct device *dev, u8_t tx_idx)
