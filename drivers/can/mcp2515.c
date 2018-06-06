@@ -97,6 +97,16 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_STATUS_TX2REQ			BIT(6)
 #define MCP2515_STATUS_TX2IF			BIT(7)
 
+/* MCP2515_CANINTF */
+#define MCP2515_CANINTF_RX0IF			BIT(0)
+#define MCP2515_CANINTF_RX1IF			BIT(1)
+#define MCP2515_CANINTF_TX0IF			BIT(2)
+#define MCP2515_CANINTF_TX1IF			BIT(3)
+#define MCP2515_CANINTF_TX2IF			BIT(4)
+#define MCP2515_CANINTF_ERRIF			BIT(5)
+#define MCP2515_CANINTF_WAKIF			BIT(6)
+#define MCP2515_CANINTF_MERRF			BIT(7)
+
 static int mcp2515_soft_reset(struct device *dev)
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
@@ -378,7 +388,6 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	}
 
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
-
 	/* find a free tx slot */
 	for (; tx_idx < MCP2515_TX_CNT; tx_idx++) {
 		if ((BIT(tx_idx) & dev_data->tx_busy_map) == 0) {
@@ -386,9 +395,9 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 			break;
 		}
 	}
+	k_mutex_unlock(&dev_data->tx_mutex);
 
 	if (tx_idx == MCP2515_TX_CNT) {
-		k_mutex_unlock(&dev_data->tx_mutex);
 		SYS_LOG_WRN("no free tx fifo available");
 		return CAN_TX_ERR;
 	}
@@ -405,7 +414,6 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	/* request tx slot transmission */
 	mcp2515_bit_modify(dev, addr_tx, BIT(3), BIT(3));
 
-	k_mutex_unlock(&dev_data->tx_mutex);
 
 	if (callback == NULL) {
 		k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_FOREVER);
@@ -434,57 +442,55 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 {
 
 }
-static void mcp2515_rx(struct device *dev) {
-
+static void mcp2515_rx(struct device *dev, u8_t rx_idx) {
+	struct can_msg msg;
+	u8_t addr_rx = MCP2515_ADDR_RXB0CTRL + (rx_idx * 0x10);
+	/* copy frame to tx slot register */
+	u8_t rx_frame[MCP2515_FRAME_LEN];
+	mcp2515_read_reg(dev, addr_rx + 1, rx_frame, MCP2515_FRAME_LEN);
+	mcp2515_convert_mcp2515_frame_to_can_msg(rx_frame, &msg);
 }
+
+static void mcp2515_tx_done(struct device *dev, u8_t tx_idx) {
+	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	if (dev_data->tx_cb[tx_idx].cb == NULL) {
+		k_sem_give(&dev_data->tx_cb[tx_idx].sem);
+	} else {
+		dev_data->tx_cb[tx_idx].cb(0); // TODO error feedback
+	}
+	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
+	dev_data->tx_busy_map &= ~BIT(tx_idx);
+	k_mutex_unlock(&dev_data->tx_mutex);
+}
+
 static void mcp2515_handle_interrupts(struct device *dev)
 {
-	u8_t status;
-	u8_t tx_cleared = 0;
-	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	u8_t canintf;
 
-
-	// mcp2515->send() calls can change the status
-	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
-	mcp2515_read_status(dev, &status);
-	if (BIT(0) & dev_data->tx_busy_map) {
-		if (status & (MCP2515_STATUS_TX0IF)) {
-			tx_cleared |= BIT(0);
+	mcp2515_read_reg(dev, MCP2515_ADDR_CANINTF, &canintf, 1);
+	while (canintf != 0) {
+		if (canintf & MCP2515_CANINTF_RX0IF) {
+			mcp2515_rx(dev, 0);
 		}
-	}
-	if (BIT(1) & dev_data->tx_busy_map) {
-		if (status & (MCP2515_STATUS_TX1IF)) {
-			tx_cleared |= BIT(1);
+		if (canintf & MCP2515_CANINTF_RX1IF) {
+			mcp2515_rx(dev, 1);
 		}
-	}
-	if (BIT(2) & dev_data->tx_busy_map) {
-		if (status & (MCP2515_STATUS_TX2IF)) {
-			tx_cleared |= BIT(2);
+		if (canintf & MCP2515_CANINTF_TX0IF) {
+			mcp2515_tx_done(dev, 0);
 		}
-	}
-	k_mutex_unlock(&dev_data->tx_mutex);
-
-	if (status & (MCP2515_STATUS_RX0IF | MCP2515_STATUS_RX1IF)) {
-		mcp2515_rx(dev);
-	}
-
-	u8_t tx_idx = 0;
-	for (; tx_idx < MCP2515_TX_CNT; tx_idx++) {
-		if (BIT(tx_idx) & tx_cleared) {
-			if (dev_data->tx_cb[tx_idx].cb == NULL) {
-				k_sem_give(&dev_data->tx_cb[tx_idx].sem);
-			} else {
-				dev_data->tx_cb[tx_idx].cb(0); // TODO error feedback
-			}
+		if (canintf & MCP2515_CANINTF_TX0IF) {
+			mcp2515_tx_done(dev, 1);
 		}
-		k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
-		dev_data->tx_busy_map &= ~BIT(tx_idx);
-		k_mutex_unlock(&dev_data->tx_mutex);
+		if (canintf & MCP2515_CANINTF_TX0IF) {
+			mcp2515_tx_done(dev, 2);
+		}
+
+		/* clear the flags we handled */
+		mcp2515_bit_modify(dev, MCP2515_ADDR_CANINTF, canintf, ~canintf);
+
+		/* check that no new interrupts happened, possibly without gpio trigger */
+		mcp2515_read_reg(dev, MCP2515_ADDR_CANINTF, &canintf, 1);
 	}
-
-
-
-
 }
 
 static void mcp2515_int_thread(struct device *dev)
