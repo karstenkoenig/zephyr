@@ -13,6 +13,8 @@
 #define SYS_LOG_LEVEL CONFIG_SYS_LOG_CAN_LEVEL
 #include <logging/sys_log.h>
 
+#define BIT_LL(n)  (1ULL << (n))
+
 #define MCP2515_TX_CNT 			3
 #define MCP2515_FRAME_LEN		13
 
@@ -293,16 +295,16 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 	int filter_index = 0;
-	while ((BIT(filter_index) & dev_data->filter_usage) &&
+	while ((BIT_LL(filter_index) & dev_data->filter_usage) &&
 			(filter_index < CONFIG_CAN_MAX_FILTER)) {
 		filter_index++;
 	}
 	if (filter_index < CONFIG_CAN_MAX_FILTER) {
-		dev_data->filter_usage |= BIT(filter_index);
+		dev_data->filter_usage |= BIT_LL(filter_index);
 		if (is_type_msgq) {
-			dev_data->filter_response_type |= BIT(filter_index);
+			dev_data->filter_response_type |= BIT_LL(filter_index);
 		} else {
-			dev_data->filter_response_type &= ~BIT(filter_index);
+			dev_data->filter_response_type &= ~BIT_LL(filter_index);
 		}
 		dev_data->filter[filter_index] = *filter;
 		dev_data->filter_response[filter_index] = response_ptr;
@@ -436,7 +438,7 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
-	dev_data->filter_usage &= ~BIT(filter_nr);
+	dev_data->filter_usage &= ~BIT_LL(filter_nr);
 	k_mutex_unlock(&dev_data->filter_mutex);
 }
 
@@ -468,12 +470,11 @@ static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
 	u8_t filter_index = 0;
 
 	for (; filter_index < CONFIG_CAN_MAX_FILTER; filter_index++) {
-#warning BIT is only 32bits!
-		if (BIT(filter_index) & dev_data->filter_usage) {
+		if (BIT_LL(filter_index) & dev_data->filter_usage) {
 			if (mcp2515_filter_match(msg, &dev_data->filter[filter_index])) {
 
 				if (dev_data->filter_response[filter_index]) {
-					if (dev_data->filter_response_type & BIT(filter_index)) {
+					if (dev_data->filter_response_type & BIT_LL(filter_index)) {
 						struct k_msgq *msg_q =
 								dev_data->filter_response[filter_index];
 						k_msgq_put(msg_q, msg, K_NO_WAIT);
