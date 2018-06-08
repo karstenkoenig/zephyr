@@ -64,7 +64,7 @@ void send_string(char *string, struct device *can_dev)
 		str_len -= msg.dlc;
 		memcpy(msg.data, string, msg.dlc);
 		string += msg.dlc;
-		can_send(can_dev, &msg, 10, tx_irq_callback);
+		can_send(can_dev, &msg, 1000, tx_irq_callback);
 	}
 }
 
@@ -98,8 +98,8 @@ void tx_thread(void *can_dev_param, void *unused2, void *unused3)
 		msg.data[0] = toggle;
 		msg_button_cnt.data[0] = button_press_cnt & 0xFF;
 		msg_button_cnt.data[1] = (button_press_cnt >> 8) & 0xFF;
-		can_send(can_dev, &msg, K_NO_WAIT, tx_irq_callback);
-		can_send(can_dev, &msg_button_cnt, K_NO_WAIT, NULL);
+		can_send(can_dev, &msg, 1000, tx_irq_callback);
+		can_send(can_dev, &msg_button_cnt, 1000, NULL);
 		if (toggle == SET_LED) {
 			send_string("String sent over CAN\n", can_dev);
 		}

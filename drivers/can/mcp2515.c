@@ -34,6 +34,8 @@ struct mcp2515_data {
 	struct k_thread int_thread;
 	k_thread_stack_t *int_thread_stack;
 	struct k_sem int_sem;
+
+	struct k_sem tx_sem;
 	struct k_mutex tx_mutex;
 	struct mcp2515_tx_cb tx_cb[MCP2515_TX_CNT];
 	u8_t tx_busy_map;
@@ -380,9 +382,9 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	int tx_idx = 0;
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
-	if (timeout != K_NO_WAIT) {
-		SYS_LOG_ERR("mcp2515_send timeout not supported");
-		return CAN_TX_UNKNOWN;
+
+	if (k_sem_take(&dev_data->tx_sem, timeout) != 0) {
+		return CAN_TIMEOUT;
 	}
 
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
@@ -513,6 +515,7 @@ static void mcp2515_tx_done(struct device *dev, u8_t tx_idx)
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
 	dev_data->tx_busy_map &= ~BIT(tx_idx);
 	k_mutex_unlock(&dev_data->tx_mutex);
+	k_sem_give(&dev_data->tx_sem);
 }
 
 static void mcp2515_handle_interrupts(struct device *dev)
@@ -645,6 +648,8 @@ static int mcp2515_init(struct device *dev)
 			(k_thread_entry_t) mcp2515_int_thread, (void *)dev, NULL, NULL,
 			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
 
+
+	k_sem_init(&dev_data->tx_sem, 3, 3);
 	dev_data->tx_cb[0].cb = NULL;
 	k_sem_init(&dev_data->tx_cb[0].sem, 0, 1);
 	dev_data->tx_cb[1].cb = NULL;
