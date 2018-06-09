@@ -255,7 +255,7 @@ static void mcp2515_convert_can_msg_to_mcp2515_frame(const struct can_msg* sourc
 	if (source->rtr == CAN_REMOTEREQUEST) {
 		rtr = BIT(6);
 	}
-	u8_t dlc = (source->dlc) & 0x07;
+	u8_t dlc = (source->dlc) & 0x0F;
 	target[MCP2515_FRAME_OFFSET_DLC] = rtr | dlc;
 
 	u8_t data_idx = 0;
@@ -281,7 +281,7 @@ static void mcp2515_convert_mcp2515_frame_to_can_msg(const u8_t* source, struct 
 		target->std_id = (source[MCP2515_FRAME_OFFSET_SIDH] << 3) |
 				(source[MCP2515_FRAME_OFFSET_SIDL] >> 5);
 	}
-	target->dlc = source[MCP2515_FRAME_OFFSET_DLC] & 0x07;
+	target->dlc = source[MCP2515_FRAME_OFFSET_DLC] & 0x0F;
 	target->rtr = source[MCP2515_FRAME_OFFSET_DLC] & BIT(6) ? CAN_REMOTEREQUEST : CAN_DATAFRAME;
 
 	u8_t data_idx = 0;
