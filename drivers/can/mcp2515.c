@@ -59,6 +59,12 @@ struct mcp2515_config {
 	const char *spi_cs_port;
 	u32_t spi_freq;
 	u8_t spi_slave;
+	u32_t bus_speed;
+
+	u8_t tq_sjw;
+	u8_t tq_prop;
+	u8_t tq_bs1;
+	u8_t tq_bs2;
 };
 
 #ifdef CONFIG_CAN_MCP2515_GPIO_SPI_CS
@@ -322,27 +328,46 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 
 	u8_t config_buf[4]; // CNF3, CNF2, CNF1, CANINTE
 
 	mcp2515_soft_reset(dev); // will enter configuration mode
 
-#warning implement validation - modes and Time quants
-
 	// CNF1; SJW<7:6> | BRP<5:0>
-	const u8_t sjw = (CONFIG_CAN_SJW - 1) << 6;
-	const u8_t bit_length = 1 + CONFIG_CAN_PROP_SEG + CONFIG_CAN_PHASE_SEG1 +
-			CONFIG_CAN_PHASE_SEG2;
-	// This could create a terrible bitrate for badly chosen parameters
+	const u8_t sjw = (dev_cfg->tq_sjw - 1) << 6;
+	const u8_t bit_length = 1 + dev_cfg->tq_prop + dev_cfg->tq_bs1 +
+			dev_cfg->tq_bs2;
+
 	u8_t brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
+	if (CONFIG_CAN_MCP2515_OSC_FREQ % (bit_length * bitrate * 2)) {
+		SYS_LOG_ERR("Prescaler is not a natural number! "
+			"prescaler = osc_rate / ((PROP + SEG1 + SEG2 + 1) * bitrate * 2)"
+			" * bus_speed); "
+			"prescaler = %d / ((%d + %d + %d + 1) * %d * 2)",
+			CONFIG_CAN_MCP2515_OSC_FREQ,
+			dev_cfg->tq_prop,
+			dev_cfg->tq_bs1,
+			dev_cfg->tq_bs2,
+			bitrate);
+	}
+
+
+	__ASSERT((1 <= cfg->tq_sjw) && (cfg->tq_sjw <= 4), "1 <= SJW <= 4");
+	__ASSERT((1 <= cfg->tq_prop) && (cfg->tq_prop <= 8), "1 <= PROP <= 8");
+	__ASSERT((1 <= cfg->tq_bs1) && (cfg->tq_bs1 <= 8), "1 <= BS1 <= 8");
+	__ASSERT((2 <= cfg->tq_bs2) && (cfg->tq_bs2 <= 8), "2 <= BS2 <= 8");
+	__ASSERT(cfg->tq_prop + cfg->tq_bs1 >= cfg->tq_bs2, "PROP + BS1 >= BS2");
+	__ASSERT(cfg->tq_bs2 > cfg->tq_sjw, "BS2 > SJW");
+
 
 	u8_t cnf1 = sjw | brp;
 
 	// CNF2; BTLMODE<7>|SAM<6>|PHSEG1<5:3>|PRSEG<2:0>
 	const u8_t btlmode = 1 << 7;
 	const u8_t sam = 0 << 6;
-	const u8_t phseg1 = (CONFIG_CAN_PHASE_SEG1 - 1) << 3;
-	const u8_t prseg = (CONFIG_CAN_PROP_SEG - 1);
+	const u8_t phseg1 = (dev_cfg->tq_bs1 - 1) << 3;
+	const u8_t prseg = (dev_cfg->tq_prop - 1);
 
 	const u8_t cnf2 = btlmode | sam | phseg1 | prseg;
 
@@ -350,7 +375,7 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	const u8_t sof = 0 << 7;
 	const u8_t wakfil = 0 << 6;
 	const u8_t und = 0 << 3;
-	const u8_t phseg2 = (CONFIG_CAN_PHASE_SEG2 - 1);
+	const u8_t phseg2 = (dev_cfg->tq_bs2 - 1);
 
 	const u8_t cnf3 = sof | wakfil | und | phseg2;
 
@@ -691,6 +716,10 @@ static const struct mcp2515_config mcp2515_config_1 = {
 	.spi_cs_pin = CONFIG_CAN_MCP2515_SPI_CS_PIN,
 	.spi_cs_port = CONFIG_CAN_MCP2515_SPI_CS_PORT_NAME,
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
+	.tq_sjw = CONFIG_CAN_SJW,
+	.tq_prop = CONFIG_CAN_PROP_SEG,
+	.tq_bs1 = CONFIG_CAN_PHASE_SEG1,
+	.tq_bs2 = CONFIG_CAN_PHASE_SEG2,
 };
 
 DEVICE_AND_API_INIT(can_mcp2515_1, CONFIG_CAN_MCP2515_NAME, &mcp2515_init,
