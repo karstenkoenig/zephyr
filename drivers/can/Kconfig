@@ -55,5 +55,6 @@ config CAN_MAX_FILTER
 	  Must be at least the size of concurrent reads.
 
 source "drivers/can/Kconfig.stm32"
+source "drivers/can/Kconfig.mcp2515"
 
 endif # CAN
