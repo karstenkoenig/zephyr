@@ -280,7 +280,6 @@ static void mcp2515_convert_can_msg_to_mcp2515_frame(const struct can_msg* sourc
 static void mcp2515_convert_mcp2515_frame_to_can_msg(const u8_t* source, struct can_msg* target)
 {
 	if (source[MCP2515_FRAME_OFFSET_SIDL] & BIT(3)) {
-		/* Extended Identifier */
 		target->id_type = CAN_EXTENDED_IDENTIFIER;
 		target->ext_id = (source[MCP2515_FRAME_OFFSET_SIDH] << 21) |
 				((source[MCP2515_FRAME_OFFSET_SIDL] >> 5) << 18) |
@@ -289,7 +288,6 @@ static void mcp2515_convert_mcp2515_frame_to_can_msg(const u8_t* source, struct 
 				source[MCP2515_FRAME_OFFSET_EID0];
 
 	} else {
-		/* Standard Identifier */
 		target->id_type = CAN_STANDARD_IDENTIFIER;
 		target->std_id = (source[MCP2515_FRAME_OFFSET_SIDH] << 3) |
 				(source[MCP2515_FRAME_OFFSET_SIDL] >> 5);
@@ -308,30 +306,33 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 		void *response_ptr, u8_t is_type_msgq)
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
+
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
-
-	int filter_index = 0;
-	while ((BIT_LL(filter_index) & dev_data->filter_usage) &&
-			(filter_index < CONFIG_CAN_MAX_FILTER)) {
-		filter_index++;
+	/* find free filter */
+	int filter_idx = 0;
+	while ((BIT_LL(filter_idx) & dev_data->filter_usage) &&
+			(filter_idx < CONFIG_CAN_MAX_FILTER)) {
+		filter_idx++;
 	}
 
-	if (filter_index < CONFIG_CAN_MAX_FILTER) {
-		dev_data->filter_usage |= BIT_LL(filter_index);
+	/* setup filter */
+	if (filter_idx < CONFIG_CAN_MAX_FILTER) {
+		dev_data->filter_usage |= BIT_LL(filter_idx);
 		if (is_type_msgq) {
-			dev_data->filter_response_type |= BIT_LL(filter_index);
+			dev_data->filter_response_type |= BIT_LL(filter_idx);
 		} else {
-			dev_data->filter_response_type &= ~BIT_LL(filter_index);
+			dev_data->filter_response_type &= ~BIT_LL(filter_idx);
 		}
-		dev_data->filter[filter_index] = *filter;
-		dev_data->filter_response[filter_index] = response_ptr;
+		dev_data->filter[filter_idx] = *filter;
+		dev_data->filter_response[filter_idx] = response_ptr;
 	} else {
-		filter_index = CAN_NO_FREE_FILTER;
+		filter_idx = CAN_NO_FREE_FILTER;
 	}
+
 	k_mutex_unlock(&dev_data->filter_mutex);
 
-	return filter_index;
+	return filter_idx;
 }
 
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
@@ -339,10 +340,11 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 {
 	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 
-	u8_t config_buf[4]; // CNF3, CNF2, CNF1, CANINTE
+	/* CNF3, CNF2, CNF1, CANINTE */
+	u8_t config_buf[4];
 
-	mcp2515_soft_reset(dev); // will enter configuration mode
-
+	/* will enter configuration mode automatically */
+	mcp2515_soft_reset(dev);
 
 	__ASSERT((1 <= cfg->tq_sjw) && (cfg->tq_sjw <= 4), "1 <= SJW <= 4");
 	__ASSERT((1 <= cfg->tq_prop) && (cfg->tq_prop <= 8), "1 <= PROP <= 8");
@@ -498,20 +500,20 @@ static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
-	u8_t filter_index = 0;
+	u8_t filter_idx = 0;
 
-	for (; filter_index < CONFIG_CAN_MAX_FILTER; filter_index++) {
-		if (BIT_LL(filter_index) & dev_data->filter_usage) {
-			if (mcp2515_filter_match(msg, &dev_data->filter[filter_index])) {
+	for (; filter_idx < CONFIG_CAN_MAX_FILTER; filter_idx++) {
+		if (BIT_LL(filter_idx) & dev_data->filter_usage) {
+			if (mcp2515_filter_match(msg, &dev_data->filter[filter_idx])) {
 
-				if (dev_data->filter_response[filter_index]) {
-					if (dev_data->filter_response_type & BIT_LL(filter_index)) {
+				if (dev_data->filter_response[filter_idx]) {
+					if (dev_data->filter_response_type & BIT_LL(filter_idx)) {
 						struct k_msgq *msg_q =
-								dev_data->filter_response[filter_index];
+								dev_data->filter_response[filter_idx];
 						k_msgq_put(msg_q, msg, K_NO_WAIT);
 					} else {
 						can_rx_callback_t callback =
-								dev_data->filter_response[filter_index];
+								dev_data->filter_response[filter_idx];
 						callback(msg);
 					}
 				}
@@ -636,8 +638,13 @@ static int mcp2515_init(struct device *dev)
 	dev_data->spi_cfg.cs = NULL;
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
 
+	/* Reset MCP2515 */
+	if (mcp2515_soft_reset(dev)) {
+		SYS_LOG_ERR("Soft-reset failed");
+		return -EIO;
+	}
 
-	/* Initialize INT GPIO */
+	/* Initialize interrupt handling  */
 	dev_data->int_gpio = device_get_binding(dev_cfg->int_port);
 	if (dev_data->int_gpio == NULL) {
 		SYS_LOG_ERR("GPIO port %s not found", dev_cfg->int_port);
@@ -654,27 +661,16 @@ static int mcp2515_init(struct device *dev)
 
 	gpio_init_callback(&(dev_data->int_gpio_cb), mcp2515_int_gpio_callback,
 			   BIT(dev_cfg->int_pin));
-
 	if (gpio_add_callback(dev_data->int_gpio, &(dev_data->int_gpio_cb))) {
 		return -EINVAL;
 	}
-
 	if (gpio_pin_enable_callback(dev_data->int_gpio, dev_cfg->int_pin)) {
 		return -EINVAL;
 	}
-
-	if (mcp2515_soft_reset(dev)) {
-		SYS_LOG_ERR("Soft-reset failed");
-
-		return -EIO;
-	}
-
-	/* Start interruption handler thread */
 	k_thread_create(&dev_data->int_thread, dev_data->int_thread_stack,
 			dev_cfg->int_thread_stack_size,
 			(k_thread_entry_t) mcp2515_int_thread, (void *)dev, NULL, NULL,
 			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
-
 
 	/* Initialize TX data */
 	k_sem_init(&dev_data->tx_sem, 3, 3);
@@ -684,10 +680,8 @@ static int mcp2515_init(struct device *dev)
 	k_sem_init(&dev_data->tx_cb[1].sem, 0, 1);
 	dev_data->tx_cb[2].cb = NULL;
 	k_sem_init(&dev_data->tx_cb[2].sem, 0, 1);
-
 	k_mutex_init(&dev_data->tx_mutex);
 	dev_data->tx_busy_map = 0;
-
 
 	/* Initialize filter data */
 	k_mutex_init(&dev_data->filter_mutex);
@@ -695,6 +689,7 @@ static int mcp2515_init(struct device *dev)
 	dev_data->filter_response_type = 0;
 	memset(dev_data->filter_response, 0, sizeof(dev_data->filter_response));
 	memset(dev_data->filter, 0, sizeof(dev_data->filter));
+
 	return 0;
 }
 
