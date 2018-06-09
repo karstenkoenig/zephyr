@@ -337,7 +337,6 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 static int mcp2515_configure(struct device *dev, enum can_mode mode,
 		u32_t bitrate)
 {
-	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 
 	u8_t config_buf[4]; // CNF3, CNF2, CNF1, CANINTE
@@ -622,14 +621,14 @@ static int mcp2515_init(struct device *dev)
 		return -EINVAL;
 	}
 
-#ifdef CAN_MCP2515_GPIO_SPI_CS
+#ifdef CONFIG_CAN_MCP2515_GPIO_SPI_CS
 	dev_data->spi_cs_ctrl.gpio_dev = device_get_binding(dev_cfg->spi_cs_port);
 	if (!dev_data->spi_cs_ctrl.gpio_dev) {
 		SYS_LOG_ERR("Unable to get GPIO SPI CS device");
 		return -ENODEV;
 	}
 
-	dev_data->spi_cs_ctrl.gpio_pin = CONFIG_MCP2515_GPIO_SPI_CS_PIN;
+	dev_data->spi_cs_ctrl.gpio_pin = dev_cfg->spi_cs_pin;
 	dev_data->spi_cs_ctrl.delay = 0;
 
 	dev_data->spi_cfg.cs = &dev_data->spi_cs_ctrl;
