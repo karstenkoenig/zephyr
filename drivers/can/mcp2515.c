@@ -434,9 +434,7 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 		return CAN_TX_ERR;
 	}
 
-	if (callback != NULL) {
-		dev_data->tx_cb[tx_idx].cb = callback;
-	}
+	dev_data->tx_cb[tx_idx].cb = callback;
 
 	u8_t addr_tx = MCP2515_ADDR_TXB0CTRL + (tx_idx * 0x10);
 	/* copy frame to tx slot register */
@@ -448,7 +446,6 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 
 	if (callback == NULL) {
 		k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_FOREVER);
-		k_sem_give(&dev_data->tx_cb[tx_idx].sem);
 		return 0;
 	}
 
@@ -541,8 +538,9 @@ static void mcp2515_tx_done(struct device *dev, u8_t tx_idx)
 	if (dev_data->tx_cb[tx_idx].cb == NULL) {
 		k_sem_give(&dev_data->tx_cb[tx_idx].sem);
 	} else {
-		dev_data->tx_cb[tx_idx].cb(0); // TODO error feedback
+		dev_data->tx_cb[tx_idx].cb(0);
 	}
+
 	k_mutex_lock(&dev_data->tx_mutex, K_FOREVER);
 	dev_data->tx_busy_map &= ~BIT(tx_idx);
 	k_mutex_unlock(&dev_data->tx_mutex);
