@@ -27,21 +27,27 @@ struct mcp2515_tx_cb {
 };
 
 struct mcp2515_data {
+	/* spi device data */
 	struct device *spi;
 	struct spi_config spi_cfg;
+#ifdef CONFIG_CAN_MCP2515_GPIO_SPI_CS
+	struct spi_cs_control spi_cs_ctrl;
+#endif
+
+	/* interrupt data */
 	struct device *int_gpio;
 	struct gpio_callback int_gpio_cb;
 	struct k_thread int_thread;
 	k_thread_stack_t *int_thread_stack;
 	struct k_sem int_sem;
 
+	/* tx data */
 	struct k_sem tx_sem;
 	struct k_mutex tx_mutex;
 	struct mcp2515_tx_cb tx_cb[MCP2515_TX_CNT];
 	u8_t tx_busy_map;
-	enum can_mode mode;
 
-
+	/* filter data */
 	struct k_mutex filter_mutex;
 	u64_t filter_usage;
 	u64_t filter_response_type;
@@ -50,34 +56,34 @@ struct mcp2515_data {
 };
 
 struct mcp2515_config {
+	/* spi configuration */
 	const char *spi_port;
-	u8_t int_pin;
-	const char *int_port;
-	size_t int_thread_stack_size;
-	int int_thread_priority;
 	u8_t spi_cs_pin;
 	const char *spi_cs_port;
 	u32_t spi_freq;
 	u8_t spi_slave;
-	u32_t bus_speed;
 
+	/* interrupt configuration */
+	u8_t int_pin;
+	const char *int_port;
+	size_t int_thread_stack_size;
+	int int_thread_priority;
+
+	/* CAN timing */
 	u8_t tq_sjw;
 	u8_t tq_prop;
 	u8_t tq_bs1;
 	u8_t tq_bs2;
 };
 
-#ifdef CONFIG_CAN_MCP2515_GPIO_SPI_CS
-struct spi_cs_control mcp2515_cs_ctrl;
-#endif
-
+/* MCP2515 Opcodes */
 #define MCP2515_OPCODE_WRITE		0x02
 #define MCP2515_OPCODE_READ			0x03
 #define MCP2515_OPCODE_BIT_MODIFY	0x05
 #define MCP2515_OPCODE_READ_STATUS	0xA0
 #define MCP2515_OPCODE_RESET		0xC0
 
-
+/* MCP2515 Registers */
 #define MCP2515_ADDR_CANSTAT		0x0E
 #define MCP2515_ADDR_CANCTRL		0x0F
 #define MCP2515_ADDR_CNF3			0x28
@@ -91,6 +97,7 @@ struct spi_cs_control mcp2515_cs_ctrl;
 #define MCP2515_ADDR_RXB0CTRL		0x60
 #define MCP2515_ADDR_RXB1CTRL		0x70
 
+/* MCP2515 Operation Modes */
 #define MCP2515_MODE_NORMAL			0x00
 #define MCP2515_MODE_LOOPBACK		0x02
 #define MCP2515_MODE_SILENT			0x03
@@ -302,11 +309,14 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 {
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
+
+
 	int filter_index = 0;
 	while ((BIT_LL(filter_index) & dev_data->filter_usage) &&
 			(filter_index < CONFIG_CAN_MAX_FILTER)) {
 		filter_index++;
 	}
+
 	if (filter_index < CONFIG_CAN_MAX_FILTER) {
 		dev_data->filter_usage |= BIT_LL(filter_index);
 		if (is_type_msgq) {
@@ -334,24 +344,6 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 
 	mcp2515_soft_reset(dev); // will enter configuration mode
 
-	// CNF1; SJW<7:6> | BRP<5:0>
-	const u8_t sjw = (dev_cfg->tq_sjw - 1) << 6;
-	const u8_t bit_length = 1 + dev_cfg->tq_prop + dev_cfg->tq_bs1 +
-			dev_cfg->tq_bs2;
-
-	u8_t brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
-	if (CONFIG_CAN_MCP2515_OSC_FREQ % (bit_length * bitrate * 2)) {
-		SYS_LOG_ERR("Prescaler is not a natural number! "
-			"prescaler = osc_rate / ((PROP + SEG1 + SEG2 + 1) * bitrate * 2)"
-			" * bus_speed); "
-			"prescaler = %d / ((%d + %d + %d + 1) * %d * 2)",
-			CONFIG_CAN_MCP2515_OSC_FREQ,
-			dev_cfg->tq_prop,
-			dev_cfg->tq_bs1,
-			dev_cfg->tq_bs2,
-			bitrate);
-	}
-
 
 	__ASSERT((1 <= cfg->tq_sjw) && (cfg->tq_sjw <= 4), "1 <= SJW <= 4");
 	__ASSERT((1 <= cfg->tq_prop) && (cfg->tq_prop <= 8), "1 <= PROP <= 8");
@@ -360,10 +352,26 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	__ASSERT(cfg->tq_prop + cfg->tq_bs1 >= cfg->tq_bs2, "PROP + BS1 >= BS2");
 	__ASSERT(cfg->tq_bs2 > cfg->tq_sjw, "BS2 > SJW");
 
+	const u8_t bit_length = 1 + dev_cfg->tq_prop + dev_cfg->tq_bs1 +
+			dev_cfg->tq_bs2;
 
+	if (CONFIG_CAN_MCP2515_OSC_FREQ % (bit_length * bitrate * 2)) {
+		SYS_LOG_ERR("Prescaler is not a natural number! "
+			"prescaler = osc_rate / ((PROP + SEG1 + SEG2 + 1) * bitrate * 2)"
+			"prescaler = %d / ((%d + %d + %d + 1) * %d * 2)",
+			CONFIG_CAN_MCP2515_OSC_FREQ,
+			dev_cfg->tq_prop,
+			dev_cfg->tq_bs1,
+			dev_cfg->tq_bs2,
+			bitrate);
+	}
+
+	/* CNF1; SJW<7:6> | BRP<5:0> */
+	u8_t brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
+	const u8_t sjw = (dev_cfg->tq_sjw - 1) << 6;
 	u8_t cnf1 = sjw | brp;
 
-	// CNF2; BTLMODE<7>|SAM<6>|PHSEG1<5:3>|PRSEG<2:0>
+	/* CNF2; BTLMODE<7>|SAM<6>|PHSEG1<5:3>|PRSEG<2:0> */
 	const u8_t btlmode = 1 << 7;
 	const u8_t sam = 0 << 6;
 	const u8_t phseg1 = (dev_cfg->tq_bs1 - 1) << 3;
@@ -371,7 +379,7 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 
 	const u8_t cnf2 = btlmode | sam | phseg1 | prseg;
 
-	// CNF3; SOF<7>|WAKFIL<6>|UND<5:3>|PHSEG2<2:0>
+	/* CNF3; SOF<7>|WAKFIL<6>|UND<5:3>|PHSEG2<2:0> */
 	const u8_t sof = 0 << 7;
 	const u8_t wakfil = 0 << 6;
 	const u8_t und = 0 << 3;
@@ -379,9 +387,9 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 
 	const u8_t cnf3 = sof | wakfil | und | phseg2;
 
-	// CANINTE
-	// MERRE<7>:WAKIE<6>:ERRIE<5>:TX2IE<4>:TX1IE<3>:TX0IE<2>:RX1IE<1>:RX0IE<0>
-	const u8_t caninte = 0x1F; // all TX and RX buffer interrupts
+	/* CANINTE
+ 	 MERRE<7>:WAKIE<6>:ERRIE<5>:TX2IE<4>:TX1IE<3>:TX0IE<2>:RX1IE<1>:RX0IE<0> */
+	const u8_t caninte = 0x1F; /* all TX and RX buffer interrupts */
 
 
 	config_buf[0] = cnf3;
@@ -397,7 +405,6 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	const u8_t rx1_ctrl = BIT(6) | BIT(5);
 	mcp2515_bit_modify(dev, MCP2515_ADDR_RXB1CTRL, rx1_ctrl, rx1_ctrl);
 
-	dev_data->mode = mode;
 	return mcp2515_request_operation_mode(dev, mcp2515_get_mcp2515_opmode(mode));
 }
 
@@ -406,7 +413,6 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 {
 	int tx_idx = 0;
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
-
 
 	if (k_sem_take(&dev_data->tx_sem, timeout) != 0) {
 		return CAN_TIMEOUT;
@@ -423,7 +429,7 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	k_mutex_unlock(&dev_data->tx_mutex);
 
 	if (tx_idx == MCP2515_TX_CNT) {
-		SYS_LOG_WRN("no free tx fifo available");
+		SYS_LOG_WRN("no free tx slot available");
 		return CAN_TX_ERR;
 	}
 
@@ -438,7 +444,6 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 	mcp2515_write_reg(dev, addr_tx + 1, tx_frame, MCP2515_FRAME_LEN);
 	/* request tx slot transmission */
 	mcp2515_bit_modify(dev, addr_tx, BIT(3), BIT(3));
-
 
 	if (callback == NULL) {
 		k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_FOREVER);
@@ -522,7 +527,7 @@ static void mcp2515_rx(struct device *dev, u8_t rx_idx)
 {
 	struct can_msg msg;
 	u8_t addr_rx = MCP2515_ADDR_RXB0CTRL + (rx_idx * 0x10);
-	/* copy frame to tx slot register */
+	/* Fetch rx buffer */
 	u8_t rx_frame[MCP2515_FRAME_LEN];
 	mcp2515_read_reg(dev, addr_rx + 1, rx_frame, MCP2515_FRAME_LEN);
 	mcp2515_convert_mcp2515_frame_to_can_msg(rx_frame, &msg);
@@ -568,7 +573,7 @@ static void mcp2515_handle_interrupts(struct device *dev)
 		/* clear the flags we handled */
 		mcp2515_bit_modify(dev, MCP2515_ADDR_CANINTF, canintf, ~canintf);
 
-		/* check that no new interrupts happened, possibly without gpio trigger */
+		/* check that no new interrupts happened while clearing known ones */
 		mcp2515_read_reg(dev, MCP2515_ADDR_CANINTF, &canintf, 1);
 	}
 }
@@ -606,8 +611,6 @@ static int mcp2515_init(struct device *dev)
 	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
-	dev_data->mode = CAN_SILENT_MODE;
-
 	/* SPI config */
 	dev_data->spi_cfg.operation = SPI_WORD_SET(8);
 	dev_data->spi_cfg.frequency = dev_cfg->spi_freq;
@@ -620,16 +623,16 @@ static int mcp2515_init(struct device *dev)
 	}
 
 #ifdef CAN_MCP2515_GPIO_SPI_CS
-	mcp2515_cs_ctrl.gpio_dev = device_get_binding(dev_cfg->spi_cs_port);
-	if (!mcp2515_cs_ctrl.gpio_dev) {
+	dev_data->spi_cs_ctrl.gpio_dev = device_get_binding(dev_cfg->spi_cs_port);
+	if (!dev_data->spi_cs_ctrl.gpio_dev) {
 		SYS_LOG_ERR("Unable to get GPIO SPI CS device");
 		return -ENODEV;
 	}
 
-	mcp2515_cs_ctrl.gpio_pin = CONFIG_MCP2515_GPIO_SPI_CS_PIN;
-	mcp2515_cs_ctrl.delay = 0;
+	dev_data->spi_cs_ctrl.gpio_pin = CONFIG_MCP2515_GPIO_SPI_CS_PIN;
+	dev_data->spi_cs_ctrl.delay = 0;
 
-	dev_data->spi_cfg.cs = &mcp2515_cs_ctrl;
+	dev_data->spi_cfg.cs = &dev_data->spi_cs_ctrl;
 #else
 	dev_data->spi_cfg.cs = NULL;
 #endif /* CAN_MCP2515_GPIO_SPI_CS */
@@ -674,6 +677,7 @@ static int mcp2515_init(struct device *dev)
 			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
 
 
+	/* Initialize TX data */
 	k_sem_init(&dev_data->tx_sem, 3, 3);
 	dev_data->tx_cb[0].cb = NULL;
 	k_sem_init(&dev_data->tx_cb[0].sem, 0, 1);
@@ -686,6 +690,7 @@ static int mcp2515_init(struct device *dev)
 	dev_data->tx_busy_map = 0;
 
 
+	/* Initialize filter data */
 	k_mutex_init(&dev_data->filter_mutex);
 	dev_data->filter_usage = 0;
 	dev_data->filter_response_type = 0;
