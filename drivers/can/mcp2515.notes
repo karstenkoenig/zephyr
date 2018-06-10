@@ -1,0 +1,9 @@
+* no way to define catch all filter that will take both extended and standard ids
+* filter checking is expensive
+* filter interface seems geared towards stm32_can
+* error handling weird, when do they get reported? if message still sent successfully?
+* loopback vs silent loopback? mcp2515 silent loopback is just loopback, needs clear documentation
+* segments weird, mcp2515 allows more options
+* dts integration
+* k_sem_reset(&mb->tx_int_sem); in stm32_can can cause missed interrupt
+* rx order can be screwed up on isr refetch
