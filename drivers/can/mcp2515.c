@@ -117,7 +117,7 @@ static void mcp2515_convert_can_msg_to_mcp2515_frame(
 		target[MCP2515_FRAME_OFFSET_EID0] = source->ext_id;
 	}
 
-	rtr = (source->rtr == CAN_REMOTEREQUEST);
+	rtr = (source->rtr == CAN_REMOTEREQUEST) ? BIT(6) : 0;
 	dlc = (source->dlc) & 0x0F;
 
 	target[MCP2515_FRAME_OFFSET_DLC] = rtr | dlc;
@@ -158,11 +158,12 @@ const int mcp2515_set_mode(struct device *dev, u8_t mcp2515_mode)
 {
 	u8_t canstat;
 
-	mcp2515_cmd_bit_modify(dev, MCP2515_ADDR_CANCTRL, 0x07 << 5,
-			mcp2515_mode << 5);
+	mcp2515_cmd_bit_modify(dev, MCP2515_ADDR_CANCTRL, MCP2515_CANCTRL_MODE_MASK,
+			mcp2515_mode << MCP2515_CANCTRL_MODE_POS);
 	mcp2515_cmd_read_reg(dev, MCP2515_ADDR_CANSTAT, &canstat, 1);
 
-	if ((canstat >> 5) != mcp2515_mode) {
+	if (((canstat & MCP2515_CANSTAT_MODE_MASK) >> MCP2515_CANSTAT_MODE_POS)
+			!= mcp2515_mode) {
 		SYS_LOG_ERR("Failed to set MCP2515 operation mode");
 		return -EIO;
 	}
@@ -286,8 +287,10 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 		 can_tx_callback_t callback)
 {
-	int tx_idx = 0;
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
+	int tx_idx = 0;
+	u8_t addr_tx_ctrl;
+	u8_t tx_frame[MCP2515_FRAME_LEN];
 
 	if (k_sem_take(&dev_data->tx_sem, timeout) != 0) {
 		return CAN_TIMEOUT;
@@ -312,13 +315,15 @@ int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
 
 	dev_data->tx_cb[tx_idx].cb = callback;
 
-	u8_t addr_tx = MCP2515_ADDR_TXB0CTRL + (tx_idx * 0x10);
-	u8_t tx_frame[MCP2515_FRAME_LEN];
+	addr_tx_ctrl = MCP2515_ADDR_TXB0CTRL + (tx_idx *
+			MCP2515_ADDR_OFFSET_FRAME2FRAME);
 
 	mcp2515_convert_can_msg_to_mcp2515_frame(msg, tx_frame);
-	mcp2515_cmd_write_reg(dev, addr_tx + 1, tx_frame, MCP2515_FRAME_LEN);
+	mcp2515_cmd_write_reg(dev, addr_tx_ctrl + MCP2515_ADDR_OFFSET_CTRL2FRAME,
+			tx_frame, MCP2515_FRAME_LEN);
 	/* request tx slot transmission */
-	mcp2515_cmd_bit_modify(dev, addr_tx, BIT(3), BIT(3));
+	mcp2515_cmd_bit_modify(dev, addr_tx_ctrl, MCP2515_TXCTRL_TXREQ,
+			MCP2515_TXCTRL_TXREQ);
 
 	if (callback == NULL) {
 		k_sem_take(&dev_data->tx_cb[tx_idx].sem, K_FOREVER);
@@ -403,10 +408,12 @@ static void mcp2515_rx(struct device *dev, u8_t rx_idx)
 {
 	struct can_msg msg;
 	u8_t rx_frame[MCP2515_FRAME_LEN];
-	u8_t addr_rx = MCP2515_ADDR_RXB0CTRL + (rx_idx * 0x10);
+	u8_t addr_rx_ctrl = MCP2515_ADDR_RXB0CTRL + (rx_idx *
+			MCP2515_ADDR_OFFSET_FRAME2FRAME);
 
 	/* Fetch rx buffer */
-	mcp2515_cmd_read_reg(dev, addr_rx + 1, rx_frame, MCP2515_FRAME_LEN);
+	mcp2515_cmd_read_reg(dev, addr_rx_ctrl + MCP2515_ADDR_OFFSET_CTRL2FRAME,
+			rx_frame, MCP2515_FRAME_LEN);
 	mcp2515_convert_mcp2515_frame_to_can_msg(rx_frame, &msg);
 	mcp2515_rx_filter(dev, &msg);
 }
