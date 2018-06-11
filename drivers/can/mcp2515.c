@@ -19,12 +19,10 @@ static int mcp2515_cmd_soft_reset(struct device *dev)
 	u8_t cmd_buf[1] = {MCP2515_OPCODE_RESET};
 
 	const struct spi_buf tx_buf = {
-		.buf = cmd_buf,
-		.len = 1,
+		.buf = cmd_buf, .len = 1,
 	};
 	const struct spi_buf_set tx = {
-		.buffers = &tx_buf,
-		.count = 1
+		.buffers = &tx_buf,	.count = 1
 	};
 
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
@@ -36,12 +34,10 @@ static int mcp2515_cmd_bit_modify(struct device *dev, u8_t reg_addr, u8_t mask,
 	u8_t cmd_buf[4] = {MCP2515_OPCODE_BIT_MODIFY, reg_addr, mask, data};
 
 	const struct spi_buf tx_buf = {
-		.buf = cmd_buf,
-		.len = 4,
+		.buf = cmd_buf, .len = 4,
 	};
 	const struct spi_buf_set tx = {
-		.buffers = &tx_buf,
-		.count = 1
+		.buffers = &tx_buf,	.count = 1
 	};
 
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
@@ -52,16 +48,13 @@ static int mcp2515_cmd_write_reg(struct device *dev, u8_t reg_addr,
 {
 	u8_t cmd_buf[2] = {MCP2515_OPCODE_WRITE, reg_addr};
 
-	struct spi_buf tx_buf[2];
-	const struct spi_buf_set tx = {
-		.buffers = tx_buf,
-		.count = 2
+	struct spi_buf tx_buf[2] = {
+			{.buf = cmd_buf, .len = 2},
+			{.buf = buf_data, .len = buf_len}
 	};
-
-	tx_buf[0].buf = cmd_buf;
-	tx_buf[0].len = 2;
-	tx_buf[1].buf = buf_data;
-	tx_buf[1].len = buf_len;
+	const struct spi_buf_set tx = {
+		.buffers = tx_buf, .count = 2
+	};
 
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
 }
@@ -71,27 +64,20 @@ static int mcp2515_cmd_read_reg(struct device *dev, u8_t reg_addr,
 {
 	u8_t cmd_buf[2] = {MCP2515_OPCODE_READ, reg_addr};
 
-	struct spi_buf tx_buf[2];
+	struct spi_buf tx_buf[2] = {
+			{.buf = cmd_buf, .len = 2},
+			{.buf = NULL, .len = buf_len}
+	};
 	const struct spi_buf_set tx = {
-		.buffers = tx_buf,
-		.count = 2
+		.buffers = tx_buf, .count = 2
 	};
-
-	struct spi_buf rx_buf[2];
+	struct spi_buf rx_buf[2] = {
+			{.buf = NULL, .len = 2},
+			{.buf = buf_data, .len = buf_len}
+	};
 	const struct spi_buf_set rx = {
-		.buffers = rx_buf,
-		.count = 2
+		.buffers = rx_buf, .count = 2
 	};
-
-	tx_buf[0].buf = cmd_buf;
-	tx_buf[0].len = 2;
-	tx_buf[1].buf = NULL;
-	tx_buf[1].len = buf_len;
-
-	rx_buf[0].buf = NULL;
-	rx_buf[0].len = 2;
-	rx_buf[1].buf = buf_data;
-	rx_buf[1].len = buf_len;
 
 	return spi_transceive(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg,
 			      &tx, &rx);
