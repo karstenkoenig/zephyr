@@ -190,6 +190,8 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 	int filter_idx = 0;
 
+	__ASSERT(response_ptr != NULL, "response_ptr can not be null");
+
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
 	/* find free filter */
@@ -391,22 +393,20 @@ static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
 	for (; filter_idx < CONFIG_CAN_MAX_FILTER; filter_idx++) {
-		if (BIT_LL(filter_idx) & dev_data->filter_usage) {
-			if (mcp2515_filter_match(msg, &dev_data->filter[filter_idx])) {
+		if (!(BIT_LL(filter_idx) & dev_data->filter_usage)) {
+			continue; /* filter slot empty */
+		}
 
-				if (dev_data->filter_response[filter_idx]) {
-					if (dev_data->filter_response_type & BIT_LL(filter_idx)) {
-						struct k_msgq *msg_q =
-							dev_data->filter_response[filter_idx];
-						k_msgq_put(msg_q, msg, K_NO_WAIT);
-					} else {
-						can_rx_callback_t callback =
-							dev_data->filter_response[filter_idx];
-						callback(msg);
-					}
-				}
+		if (!mcp2515_filter_match(msg, &dev_data->filter[filter_idx])) {
+			continue; /* filter did not match */
+		}
 
-			}
+		if (dev_data->filter_response_type & BIT_LL(filter_idx)) {
+			struct k_msgq *msg_q = dev_data->filter_response[filter_idx];
+			k_msgq_put(msg_q, msg, K_NO_WAIT);
+		} else {
+			can_rx_callback_t callback = dev_data->filter_response[filter_idx];
+			callback(msg);
 		}
 	}
 
