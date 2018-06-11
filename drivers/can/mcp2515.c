@@ -211,37 +211,20 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 {
 	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 
+	/* Receive everything, filtering done in driver, RXB0 roll over into RXB1 */
+	const u8_t rx0_ctrl = BIT(6) | BIT(5) | BIT(2);
+	const u8_t rx1_ctrl = BIT(6) | BIT(5);
+
 	/* CNF3, CNF2, CNF1, CANINTE */
 	u8_t config_buf[4];
-
-	/* will enter configuration mode automatically */
-	mcp2515_cmd_soft_reset(dev);
-
-	__ASSERT((cfg->tq_sjw >= 1) && (cfg->tq_sjw <= 4), "1 <= SJW <= 4");
-	__ASSERT((cfg->tq_prop >= 1) && (cfg->tq_prop <= 8), "1 <= PROP <= 8");
-	__ASSERT((cfg->tq_bs1 >= 1) && (cfg->tq_bs1 <= 8), "1 <= BS1 <= 8");
-	__ASSERT((cfg->tq_bs2 >= 2) && (cfg->tq_bs2 <= 8), "2 <= BS2 <= 8");
-	__ASSERT(cfg->tq_prop + cfg->tq_bs1 >= cfg->tq_bs2, "PROP + BS1 >= BS2");
-	__ASSERT(cfg->tq_bs2 > cfg->tq_sjw, "BS2 > SJW");
 
 	const u8_t bit_length = 1 + dev_cfg->tq_prop + dev_cfg->tq_bs1 +
 				dev_cfg->tq_bs2;
 
-	if (CONFIG_CAN_MCP2515_OSC_FREQ % (bit_length * bitrate * 2)) {
-		SYS_LOG_ERR("Prescaler is not a natural number! "
-			    "prescaler = osc_rate / ((PROP + SEG1 + SEG2 + 1) * bitrate * 2)"
-			    "prescaler = %d / ((%d + %d + %d + 1) * %d * 2)",
-			    CONFIG_CAN_MCP2515_OSC_FREQ,
-			    dev_cfg->tq_prop,
-			    dev_cfg->tq_bs1,
-			    dev_cfg->tq_bs2,
-			    bitrate);
-	}
-
 	/* CNF1; SJW<7:6> | BRP<5:0> */
-	u8_t brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
 	const u8_t sjw = (dev_cfg->tq_sjw - 1) << 6;
-	u8_t cnf1 = sjw | brp;
+	u8_t brp;
+	u8_t cnf1;
 
 	/* CNF2; BTLMODE<7>|SAM<6>|PHSEG1<5:3>|PRSEG<2:0> */
 	const u8_t btlmode = 1 << 7;
@@ -263,8 +246,34 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	 * MERRE<7>:WAKIE<6>:ERRIE<5>:TX2IE<4>:TX1IE<3>:TX0IE<2>:RX1IE<1>:RX0IE<0>
 	 * all TX and RX buffer interrupts enabled
 	 */
-	const u8_t caninte = 0x1F;
+	const u8_t caninte = BIT(4) | BIT(3) | BIT(2) | BIT(1) | BIT(0);
 
+
+	/* baudrate prescaler and associated cnf1 register */
+	brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
+	cnf1 = sjw | brp;
+
+
+	/* reset will also enter configuration mode */
+	mcp2515_cmd_soft_reset(dev);
+
+	__ASSERT((cfg->tq_sjw >= 1) && (cfg->tq_sjw <= 4), "1 <= SJW <= 4");
+	__ASSERT((cfg->tq_prop >= 1) && (cfg->tq_prop <= 8), "1 <= PROP <= 8");
+	__ASSERT((cfg->tq_bs1 >= 1) && (cfg->tq_bs1 <= 8), "1 <= BS1 <= 8");
+	__ASSERT((cfg->tq_bs2 >= 2) && (cfg->tq_bs2 <= 8), "2 <= BS2 <= 8");
+	__ASSERT(cfg->tq_prop + cfg->tq_bs1 >= cfg->tq_bs2, "PROP + BS1 >= BS2");
+	__ASSERT(cfg->tq_bs2 > cfg->tq_sjw, "BS2 > SJW");
+
+	if (CONFIG_CAN_MCP2515_OSC_FREQ % (bit_length * bitrate * 2)) {
+		SYS_LOG_ERR("Prescaler is not a natural number! "
+			    "prescaler = osc_rate / ((PROP + SEG1 + SEG2 + 1) * bitrate * 2)"
+			    "prescaler = %d / ((%d + %d + %d + 1) * %d * 2)",
+			    CONFIG_CAN_MCP2515_OSC_FREQ,
+			    dev_cfg->tq_prop,
+			    dev_cfg->tq_bs1,
+			    dev_cfg->tq_bs2,
+			    bitrate);
+	}
 
 	config_buf[0] = cnf3;
 	config_buf[1] = cnf2;
@@ -272,10 +281,6 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	config_buf[3] = caninte;
 
 	mcp2515_cmd_write_reg(dev, MCP2515_ADDR_CNF3, config_buf, 4);
-
-	/* Receive everything, filtering done in driver, RXB0 roll over into RXB1 */
-	const u8_t rx0_ctrl = BIT(6) | BIT(5) | BIT(2);
-	const u8_t rx1_ctrl = BIT(6) | BIT(5);
 
 	mcp2515_cmd_bit_modify(dev, MCP2515_ADDR_RXB0CTRL, rx0_ctrl, rx0_ctrl);
 	mcp2515_cmd_bit_modify(dev, MCP2515_ADDR_RXB1CTRL, rx1_ctrl, rx1_ctrl);
