@@ -16,41 +16,41 @@
 
 static int mcp2515_cmd_soft_reset(struct device *dev)
 {
-	u8_t cmd_buf[1] = {MCP2515_OPCODE_RESET};
+	u8_t cmd_buf[1] = { MCP2515_OPCODE_RESET };
 
 	const struct spi_buf tx_buf = {
 		.buf = cmd_buf, .len = 1,
 	};
 	const struct spi_buf_set tx = {
-		.buffers = &tx_buf,	.count = 1
+		.buffers = &tx_buf, .count = 1
 	};
 
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
 }
 
 static int mcp2515_cmd_bit_modify(struct device *dev, u8_t reg_addr, u8_t mask,
-			      u8_t data)
+				  u8_t data)
 {
-	u8_t cmd_buf[4] = {MCP2515_OPCODE_BIT_MODIFY, reg_addr, mask, data};
+	u8_t cmd_buf[4] = { MCP2515_OPCODE_BIT_MODIFY, reg_addr, mask, data };
 
 	const struct spi_buf tx_buf = {
 		.buf = cmd_buf, .len = 4,
 	};
 	const struct spi_buf_set tx = {
-		.buffers = &tx_buf,	.count = 1
+		.buffers = &tx_buf, .count = 1
 	};
 
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
 }
 
 static int mcp2515_cmd_write_reg(struct device *dev, u8_t reg_addr,
-			      u8_t *buf_data, u8_t buf_len)
+				 u8_t *buf_data, u8_t buf_len)
 {
-	u8_t cmd_buf[2] = {MCP2515_OPCODE_WRITE, reg_addr};
+	u8_t cmd_buf[2] = { MCP2515_OPCODE_WRITE, reg_addr };
 
 	struct spi_buf tx_buf[2] = {
-			{.buf = cmd_buf, .len = 2},
-			{.buf = buf_data, .len = buf_len}
+		{ .buf = cmd_buf, .len = 2 },
+		{ .buf = buf_data, .len = buf_len }
 	};
 	const struct spi_buf_set tx = {
 		.buffers = tx_buf, .count = 2
@@ -60,20 +60,20 @@ static int mcp2515_cmd_write_reg(struct device *dev, u8_t reg_addr,
 }
 
 static int mcp2515_cmd_read_reg(struct device *dev, u8_t reg_addr,
-			      u8_t *buf_data, u8_t buf_len)
+				u8_t *buf_data, u8_t buf_len)
 {
-	u8_t cmd_buf[2] = {MCP2515_OPCODE_READ, reg_addr};
+	u8_t cmd_buf[2] = { MCP2515_OPCODE_READ, reg_addr };
 
 	struct spi_buf tx_buf[2] = {
-			{.buf = cmd_buf, .len = 2},
-			{.buf = NULL, .len = buf_len}
+		{ .buf = cmd_buf, .len = 2 },
+		{ .buf = NULL, .len = buf_len }
 	};
 	const struct spi_buf_set tx = {
 		.buffers = tx_buf, .count = 2
 	};
 	struct spi_buf rx_buf[2] = {
-			{.buf = NULL, .len = 2},
-			{.buf = buf_data, .len = buf_len}
+		{ .buf = NULL, .len = 2 },
+		{ .buf = buf_data, .len = buf_len }
 	};
 	const struct spi_buf_set rx = {
 		.buffers = rx_buf, .count = 2
@@ -182,18 +182,18 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
 	/* find free filter */
-	while ((BIT_LL(filter_idx) & dev_data->filter_usage) &&
+	while ((BIT(filter_idx) & dev_data->filter_usage) &&
 	       (filter_idx < CONFIG_CAN_MAX_FILTER)) {
 		filter_idx++;
 	}
 
 	/* setup filter */
 	if (filter_idx < CONFIG_CAN_MAX_FILTER) {
-		dev_data->filter_usage |= BIT_LL(filter_idx);
+		dev_data->filter_usage |= BIT(filter_idx);
 		if (is_type_msgq) {
-			dev_data->filter_response_type |= BIT_LL(filter_idx);
+			dev_data->filter_response_type |= BIT(filter_idx);
 		} else {
-			dev_data->filter_response_type &= ~BIT_LL(filter_idx);
+			dev_data->filter_response_type &= ~BIT(filter_idx);
 		}
 		dev_data->filter[filter_idx] = *filter;
 		dev_data->filter_response[filter_idx] = response_ptr;
@@ -281,7 +281,7 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	mcp2515_cmd_bit_modify(dev, MCP2515_ADDR_RXB1CTRL, rx1_ctrl, rx1_ctrl);
 
 	return mcp2515_set_mode(dev,
-			mcp2515_convert_can_mode_to_mcp2515_mode(mode));
+				mcp2515_convert_can_mode_to_mcp2515_mode(mode));
 }
 
 int mcp2515_send(struct device *dev, struct can_msg *msg, s32_t timeout,
@@ -349,7 +349,7 @@ void mcp2515_detach(struct device *dev, int filter_nr)
 	struct mcp2515_data *dev_data = DEV_DATA(dev);
 
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
-	dev_data->filter_usage &= ~BIT_LL(filter_nr);
+	dev_data->filter_usage &= ~BIT(filter_nr);
 	k_mutex_unlock(&dev_data->filter_mutex);
 }
 
@@ -384,7 +384,7 @@ static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
 	for (; filter_idx < CONFIG_CAN_MAX_FILTER; filter_idx++) {
-		if (!(BIT_LL(filter_idx) & dev_data->filter_usage)) {
+		if (!(BIT(filter_idx) & dev_data->filter_usage)) {
 			continue; /* filter slot empty */
 		}
 
@@ -392,7 +392,7 @@ static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
 			continue; /* filter did not match */
 		}
 
-		if (dev_data->filter_response_type & BIT_LL(filter_idx)) {
+		if (dev_data->filter_response_type & BIT(filter_idx)) {
 			struct k_msgq *msg_q = dev_data->filter_response[filter_idx];
 			k_msgq_put(msg_q, msg, K_NO_WAIT);
 		} else {

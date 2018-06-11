@@ -10,8 +10,6 @@
 
 #include <can.h>
 
-#define BIT_LL(n)  (1ULL << (n))
-
 #define MCP2515_TX_CNT                   3
 #define MCP2515_FRAME_LEN               13
 
@@ -47,8 +45,8 @@ struct mcp2515_data {
 
 	/* filter data */
 	struct k_mutex filter_mutex;
-	u64_t filter_usage;
-	u64_t filter_response_type;
+	u32_t filter_usage;
+	u32_t filter_response_type;
 	void *filter_response[CONFIG_CAN_MAX_FILTER];
 	struct can_filter filter[CONFIG_CAN_MAX_FILTER];
 };
