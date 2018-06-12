@@ -182,8 +182,8 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
 	/* find free filter */
-	while ((BIT(filter_idx) & dev_data->filter_usage) &&
-	       (filter_idx < CONFIG_CAN_MAX_FILTER)) {
+	while ((BIT(filter_idx) & dev_data->filter_usage)
+			&& (filter_idx < CONFIG_CAN_MAX_FILTER)) {
 		filter_idx++;
 	}
 
@@ -211,10 +211,6 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 {
 	const struct mcp2515_config *dev_cfg = DEV_CFG(dev);
 
-	/* Receive everything, filtering done in driver, RXB0 roll over into RXB1 */
-	const u8_t rx0_ctrl = BIT(6) | BIT(5) | BIT(2);
-	const u8_t rx1_ctrl = BIT(6) | BIT(5);
-
 	/* CNF3, CNF2, CNF1, CANINTE */
 	u8_t config_buf[4];
 
@@ -222,9 +218,9 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 				dev_cfg->tq_bs2;
 
 	/* CNF1; SJW<7:6> | BRP<5:0> */
+	u8_t brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
 	const u8_t sjw = (dev_cfg->tq_sjw - 1) << 6;
-	u8_t brp;
-	u8_t cnf1;
+	u8_t cnf1 = sjw | brp;
 
 	/* CNF2; BTLMODE<7>|SAM<6>|PHSEG1<5:3>|PRSEG<2:0> */
 	const u8_t btlmode = 1 << 7;
@@ -248,14 +244,9 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	 */
 	const u8_t caninte = BIT(4) | BIT(3) | BIT(2) | BIT(1) | BIT(0);
 
-
-	/* baudrate prescaler and associated cnf1 register */
-	brp = (CONFIG_CAN_MCP2515_OSC_FREQ / (bit_length * bitrate * 2)) - 1;
-	cnf1 = sjw | brp;
-
-
-	/* reset will also enter configuration mode */
-	mcp2515_cmd_soft_reset(dev);
+	/* Receive everything, filtering done in driver, RXB0 roll over into RXB1 */
+	const u8_t rx0_ctrl = BIT(6) | BIT(5) | BIT(2);
+	const u8_t rx1_ctrl = BIT(6) | BIT(5);
 
 	__ASSERT((cfg->tq_sjw >= 1) && (cfg->tq_sjw <= 4), "1 <= SJW <= 4");
 	__ASSERT((cfg->tq_prop >= 1) && (cfg->tq_prop <= 8), "1 <= PROP <= 8");
@@ -279,6 +270,9 @@ static int mcp2515_configure(struct device *dev, enum can_mode mode,
 	config_buf[1] = cnf2;
 	config_buf[2] = cnf1;
 	config_buf[3] = caninte;
+
+	/* will enter configuration mode automatically */
+	mcp2515_cmd_soft_reset(dev);
 
 	mcp2515_cmd_write_reg(dev, MCP2515_ADDR_CNF3, config_buf, 4);
 
