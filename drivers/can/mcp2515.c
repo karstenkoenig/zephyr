@@ -564,24 +564,8 @@ static int mcp2515_init(struct device *dev)
 			(k_thread_entry_t) mcp2515_int_thread, (void *)dev, NULL, NULL,
 			K_PRIO_COOP(dev_cfg->int_thread_priority), 0, K_NO_WAIT);
 
-	/* Initialize TX data */
-	k_sem_init(&dev_data->tx_sem, 3, 3);
-	dev_data->tx_cb[0].cb = NULL;
-	k_sem_init(&dev_data->tx_cb[0].sem, 0, 1);
-	dev_data->tx_cb[1].cb = NULL;
-	k_sem_init(&dev_data->tx_cb[1].sem, 0, 1);
-	dev_data->tx_cb[2].cb = NULL;
-	k_sem_init(&dev_data->tx_cb[2].sem, 0, 1);
-	k_mutex_init(&dev_data->tx_mutex);
-	dev_data->tx_busy_map = 0;
-
-	/* Initialize filter data */
-	k_mutex_init(&dev_data->filter_mutex);
-	dev_data->filter_usage = 0;
-	dev_data->filter_response_type = 0;
-	memset(dev_data->filter_response, 0, sizeof(dev_data->filter_response));
-	memset(dev_data->filter, 0, sizeof(dev_data->filter));
-
+    memset(dev_data->filter_response, 0, sizeof(dev_data->filter_response));
+    memset(dev_data->filter, 0, sizeof(dev_data->filter));
 	return 0;
 }
 
@@ -592,8 +576,20 @@ static K_THREAD_STACK_DEFINE(mcp2515_int_thread_stack,
 
 static struct mcp2515_data mcp2515_data_1 = {
 	.int_thread_stack = mcp2515_int_thread_stack,
-	.int_sem = _K_SEM_INITIALIZER(mcp2515_data_1.int_sem,
-				      0, UINT_MAX),
+	.int_sem = _K_SEM_INITIALIZER(mcp2515_data_1.int_sem, 0, UINT_MAX),
+
+	.tx_mutex = _K_MUTEX_INITIALIZER(mcp2515_data_1.tx_mutex),
+	.tx_sem = _K_SEM_INITIALIZER(mcp2515_data_1.tx_sem, 3, 3),
+	.tx_cb = {
+			{.cb = NULL, .sem = _K_SEM_INITIALIZER(mcp2515_data_1.tx_cb[0].sem, 0, 1) },
+			{.cb = NULL, .sem = _K_SEM_INITIALIZER(mcp2515_data_1.tx_cb[1].sem, 0, 1) },
+			{.cb = NULL, .sem = _K_SEM_INITIALIZER(mcp2515_data_1.tx_cb[2].sem, 0, 1) },
+	},
+	.tx_busy_map = 0,
+
+	.filter_mutex = _K_MUTEX_INITIALIZER(mcp2515_data_1.filter_mutex),
+	.filter_usage = 0,
+	.filter_response_type = 0,
 };
 
 static const struct mcp2515_config mcp2515_config_1 = {
