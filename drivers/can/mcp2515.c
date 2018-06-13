@@ -184,12 +184,12 @@ static int mcp2515_attach(struct device *dev, const struct can_filter *filter,
 
 	/* find free filter */
 	while ((BIT(filter_idx) & dev_data->filter_usage)
-           && (filter_idx < CONFIG_CAN_MAX_FILTER)) {
+           && (filter_idx < CONFIG_CAN_MCP2515_MAX_FILTER)) {
 		filter_idx++;
 	}
 
 	/* setup filter */
-	if (filter_idx < CONFIG_CAN_MAX_FILTER) {
+	if (filter_idx < CONFIG_CAN_MCP2515_MAX_FILTER) {
 		dev_data->filter_usage |= BIT(filter_idx);
 		if (is_type_msgq) {
 			dev_data->filter_response_type |= BIT(filter_idx);
@@ -382,7 +382,7 @@ static void mcp2515_rx_filter(struct device *dev, struct can_msg *msg)
 
 	k_mutex_lock(&dev_data->filter_mutex, K_FOREVER);
 
-	for (; filter_idx < CONFIG_CAN_MAX_FILTER; filter_idx++) {
+	for (; filter_idx < CONFIG_CAN_MCP2515_MAX_FILTER; filter_idx++) {
 		if (!(BIT(filter_idx) & dev_data->filter_usage)) {
 			continue; /* filter slot empty */
 		}
