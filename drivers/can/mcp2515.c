@@ -53,7 +53,7 @@ static int mcp2515_cmd_write_reg(struct device *dev, u8_t reg_addr,
 		{ .buf = buf_data, .len = buf_len }
 	};
 	const struct spi_buf_set tx = {
-		.buffers = tx_buf, .count = sizeof(tx_buf)/sizeof(tx_buf[0])
+		.buffers = tx_buf, .count = ARRAY_SIZE(tx_buf)
 	};
 
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
@@ -69,14 +69,14 @@ static int mcp2515_cmd_read_reg(struct device *dev, u8_t reg_addr,
 		{ .buf = NULL, .len = buf_len }
 	};
 	const struct spi_buf_set tx = {
-		.buffers = tx_buf, .count = sizeof(tx_buf)/sizeof(tx_buf[0])
+		.buffers = tx_buf, .count = ARRAY_SIZE(tx_buf)
 	};
 	struct spi_buf rx_buf[] = {
 		{ .buf = NULL, .len = sizeof(cmd_buf) },
 		{ .buf = buf_data, .len = buf_len }
 	};
 	const struct spi_buf_set rx = {
-		.buffers = rx_buf, .count = sizeof(rx_buf)/sizeof(rx_buf[0])
+		.buffers = rx_buf, .count = ARRAY_SIZE(rx_buf)
 	};
 
 	return spi_transceive(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg,
