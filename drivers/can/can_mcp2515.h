@@ -13,6 +13,7 @@
 #define MCP2515_RX_CNT                   2
 #define MCP2515_TX_CNT                   3
 #define MCP2515_FRAME_LEN               13
+#define MCP2515_DLC_MAX                  8
 
 #define DEV_CFG(dev) \
 	((const struct mcp2515_config *const)(dev)->config->config_info)
