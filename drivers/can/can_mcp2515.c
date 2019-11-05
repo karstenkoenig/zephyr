@@ -212,11 +212,11 @@ static void mcp2515_convert_zcanframe_to_mcp2515frame(const struct zcan_frame
 	}
 
 	rtr = (source->rtr == CAN_REMOTEREQUEST) ? BIT(6) : 0;
-	dlc = (source->dlc < MCP2515_DLC_MAX) ? source->dlc : MCP2515_DLC_MAX;
+	dlc = (source->dlc < CAN_MAX_DLC) ? source->dlc : CAN_MAX_DLC;
 
 	target[MCP2515_FRAME_OFFSET_DLC] = rtr | dlc;
 
-	for (; data_idx < MCP2515_DLC_MAX; data_idx++) {
+	for (; data_idx < CAN_MAX_DLC; data_idx++) {
 		target[MCP2515_FRAME_OFFSET_D0 + data_idx] =
 			source->data[data_idx];
 	}
@@ -243,11 +243,11 @@ static void mcp2515_convert_mcp2515frame_to_zcanframe(const u8_t *source,
 	}
 
 	tmp_dlc = source[MCP2515_FRAME_OFFSET_DLC] & 0x0F;
-	target->dlc = (tmp_dlc < MCP2515_DLC_MAX) ? tmp_dlc : MCP2515_DLC_MAX;
+	target->dlc = (tmp_dlc < CAN_MAX_DLC) ? tmp_dlc : CAN_MAX_DLC;
 	target->rtr = source[MCP2515_FRAME_OFFSET_DLC] & BIT(6) ?
 		      CAN_REMOTEREQUEST : CAN_DATAFRAME;
 
-	for (; data_idx < MCP2515_DLC_MAX; data_idx++) {
+	for (; data_idx < CAN_MAX_DLC; data_idx++) {
 		target->data[data_idx] = source[MCP2515_FRAME_OFFSET_D0 +
 						data_idx];
 	}
@@ -395,7 +395,7 @@ static int mcp2515_send(struct device *dev, const struct zcan_frame *msg,
 	 * DLC[3:0] bits to a value greater than eight; however, only
 	 * eight bytes are transmitted
 	 */
-	if (msg->dlc > MCP2515_DLC_MAX) {
+	if (msg->dlc > CAN_MAX_DLC) {
 		LOG_WRN("DLC > 8");
 	}
 
@@ -429,8 +429,8 @@ static int mcp2515_send(struct device *dev, const struct zcan_frame *msg,
 	abc = 2 * tx_idx;
 
 	/* Calculate minimum length to transfer */
-	len = sizeof(tx_frame) - MCP2515_DLC_MAX;
-	len += MIN(tx_frame[MCP2515_FRAME_OFFSET_DLC] & 0x0F, MCP2515_DLC_MAX);
+	len = sizeof(tx_frame) - CAN_MAX_DLC;
+	len += MIN(tx_frame[MCP2515_FRAME_OFFSET_DLC] & 0x0F, CAN_MAX_DLC);
 
 	mcp2515_cmd_load_tx_buffer(dev, abc, tx_frame, len);
 
@@ -567,7 +567,7 @@ static void mcp2515_rx(struct device *dev, u8_t rx_idx)
 	/* The MCP2515 datasheet states that it is possible to set the
 	 * DLC[3:0] bits to a value greater than eight.
 	 */
-	if (msg.dlc > MCP2515_DLC_MAX) {
+	if (msg.dlc > CAN_MAX_DLC) {
 		LOG_WRN("DLC > 8");
 	}
 
