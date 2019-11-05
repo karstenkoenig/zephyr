@@ -212,7 +212,7 @@ static void mcp2515_convert_zcanframe_to_mcp2515frame(const struct zcan_frame
 	}
 
 	rtr = (source->rtr == CAN_REMOTEREQUEST) ? BIT(6) : 0;
-	dlc = (source->dlc) & 0x0F;
+	dlc = (source->dlc < MCP2515_DLC_MAX) ? source->dlc : MCP2515_DLC_MAX;
 
 	target[MCP2515_FRAME_OFFSET_DLC] = rtr | dlc;
 
@@ -226,6 +226,7 @@ static void mcp2515_convert_mcp2515frame_to_zcanframe(const u8_t *source,
 						      struct zcan_frame *target)
 {
 	u8_t data_idx = 0U;
+	u8_t tmp_dlc;
 
 	if (source[MCP2515_FRAME_OFFSET_SIDL] & BIT(3)) {
 		target->id_type = CAN_EXTENDED_IDENTIFIER;
@@ -241,7 +242,8 @@ static void mcp2515_convert_mcp2515frame_to_zcanframe(const u8_t *source,
 				 (source[MCP2515_FRAME_OFFSET_SIDL] >> 5);
 	}
 
-	target->dlc = source[MCP2515_FRAME_OFFSET_DLC] & 0x0F;
+	tmp_dlc = source[MCP2515_FRAME_OFFSET_DLC] & 0x0F;
+	target->dlc = (tmp_dlc < MCP2515_DLC_MAX) ? tmp_dlc : MCP2515_DLC_MAX;
 	target->rtr = source[MCP2515_FRAME_OFFSET_DLC] & BIT(6) ?
 		      CAN_REMOTEREQUEST : CAN_DATAFRAME;
 
