@@ -18,6 +18,7 @@ properties:
     int-gpios:
       type: phandle-array
       required: true
+      description: Active low interrupt signal
     reg:
       type: array
       required: true
