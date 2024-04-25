@@ -23,6 +23,12 @@ cpusys_vevif: &cpusys_vevif_remote {};
 		compatible = "simple-bus";
 		interrupt-parent = <&cpuapp_nvic>;
 		ranges;
+
+		stmesp: memory@a2000000 {
+			compatible = "nordic,owned-memory";
+			reg = <0xa2000000 0x1000000>;
+			perm-write;
+		};
 	};
 };
 
