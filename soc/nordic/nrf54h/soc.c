@@ -9,6 +9,7 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_frontend_stmesp.h>
 
 #include <hal/nrf_hsfll.h>
 #include <hal/nrf_lrcconf.h>
@@ -79,6 +80,17 @@ static int trim_hsfll(void)
 
 	return 0;
 }
+
+#if defined(CONFIG_ARM_ON_ENTER_CPU_IDLE_HOOK)
+bool z_arm_on_enter_cpu_idle(void)
+{
+	if (IS_ENABLED(CONFIG_LOG_FRONTEND_STMESP)) {
+		log_frontend_stmesp_pre_sleep();
+	}
+
+	return true;
+}
+#endif
 
 static int nordicsemi_nrf54h_init(void)
 {
