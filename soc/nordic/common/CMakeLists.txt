@@ -7,6 +7,8 @@ zephyr_linker_sources_ifdef(CONFIG_ARM SECTIONS arm_platform_init.ld)
 
 zephyr_library_sources_ifdef(CONFIG_POWEROFF poweroff.c)
 
+zephyr_library_sources_ifdef(CONFIG_CORESIGHT_ETR_TBM coresight_etr_tbm.c)
+
 zephyr_include_directories(.)
 
 if(CONFIG_TFM_PARTITION_PLATFORM)
