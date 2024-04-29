@@ -306,6 +306,10 @@
 				status = "disabled";
 				interrupts = <127 NRF_DEFAULT_IRQ_PRIORITY>;
 			};
+
+			tddconf: tddconf@1000 {
+				compatible = "nordic,nrf-tddconf";
+			};
 		};
 
 		global_peripherals: peripheral@5f000000 {
