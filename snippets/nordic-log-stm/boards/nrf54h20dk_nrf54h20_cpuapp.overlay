@@ -6,3 +6,9 @@
 &tbm {
 	status = "okay";
 };
+
+&tddconf {
+    status = "okay";
+    stmsink = "tpiu";
+    portconfig = <0>;
+};
