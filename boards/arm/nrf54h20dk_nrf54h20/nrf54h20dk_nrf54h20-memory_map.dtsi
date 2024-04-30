@@ -26,7 +26,11 @@
 			};
 
 			cpuapp_data: memory@1000 {
-				reg = <0x1000 DT_SIZE_K(256)>;
+				reg = <0x1000 DT_SIZE_K(252)>;
+			};
+
+			etr_buffer: memory@40000 {
+				reg = <0x40000 DT_SIZE_K(4)>;
 			};
 		};
 
