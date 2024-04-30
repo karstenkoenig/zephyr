@@ -6,16 +6,16 @@
 
 / {
 	reserved-memory {
-		cpuapp_ram0x_region: memory@2f000000 {
+		cpuapp_ram0x_region: memory@2f001000 {
 			compatible = "nordic,owned-memory";
-			reg = <0x2f000000 DT_SIZE_K(768)>;
+			reg = <0x2f001000 DT_SIZE_K(260)>;
 			status = "disabled";
 			perm-read;
 			perm-write;
 			perm-secure;
 			#address-cells = <1>;
 			#size-cells = <1>;
-			ranges = <0x0 0x2f000000 0xc0000>;
+			ranges = <0x0 0x2f001000 0xc0000>;
 
 			cpusec_cpuapp_ipc_shm: memory@0 {
 				reg = <0x0 DT_SIZE_K(2)>;
@@ -29,21 +29,21 @@
 				reg = <0x1000 DT_SIZE_K(252)>;
 			};
 
-			etr_buffer: memory@be000 {
-				reg = <0xbe000 DT_SIZE_K(4)>;
+			etr_buffer: memory@41000 {
+				reg = <0x41000 DT_SIZE_K(4)>;
 			};
 		};
 
-		cpurad_ram0x_region: memory@2f041000 {
+		cpurad_ram0x_region: memory@2f042000 {
 			compatible = "nordic,owned-memory";
-			reg = <0x2f041000 DT_SIZE_K(4)>;
+			reg = <0x2f042000 DT_SIZE_K(4)>;
 			status = "disabled";
 			perm-read;
 			perm-write;
 			perm-secure;
 			#address-cells = <1>;
 			#size-cells = <1>;
-			ranges = <0x0 0x2f041000 0x1000>;
+			ranges = <0x0 0x2f042000 0x1000>;
 
 			cpusec_cpurad_ipc_shm: memory@0 {
 				reg = <0x0 DT_SIZE_K(2)>;
