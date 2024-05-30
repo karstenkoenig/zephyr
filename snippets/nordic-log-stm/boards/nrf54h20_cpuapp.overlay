@@ -9,7 +9,7 @@
 
 &tddconf {
 	status = "okay";
-	stmsink = "etr";
+	stmsink = "tpiu";
 	portconfig = <0>;
 };
 

@@ -100,5 +100,8 @@ int main(void)
 	timing_report(t_tpd, rpt_tp, "tracepoint_d32");
 #endif
 
+	while (1) {
+		TEST_LOG(rpt, (LOG_INF("test end")));
+	}
 	return 0;
 }
