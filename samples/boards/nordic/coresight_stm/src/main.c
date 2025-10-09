@@ -105,5 +105,10 @@ int main(void)
 
 	/* Needed in coverage run to separate STM logs from printk() */
 	k_msleep(400);
+
+	while(1) {
+		k_msleep(1000);
+		LOG_INF("Heartbeat from %s core", core_name);
+	}
 	return 0;
 }
