@@ -65,3 +65,11 @@ i2s_rxtx: &tdm130 {
 &timer131 {
 	status = "okay";
 };
+
+&coresight {
+	status = "okay";
+	mode = "unconfigured";
+	pinctrl-0 = <&tpiu_default>;
+	pinctrl-names = "default";
+};
+

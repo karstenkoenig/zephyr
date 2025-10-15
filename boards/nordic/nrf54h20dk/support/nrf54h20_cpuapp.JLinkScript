@@ -34,6 +34,10 @@ __constant U32 _ENFTC = 0x1;
 __constant U32 _TPIU_SYNC_FRAME_COUNT = 0x8;
 __constant U32 _CURRENTPORTSIZE_4 = 0x8;
 
+// ETM
+__constant U32 _ETM_ADDR = 0xBF043000;
+
+
 // CoreSight general
 __constant U32 _CORESIGHT_LAR_OFFSET = 0xFB0;
 __constant U32 _CORESIGHT_UNLOCK_KEY = 0xC5ACCE55;
@@ -99,13 +103,6 @@ int _SetupETMTPIUTrace(void)
 	JLINK_MEM_WriteU32(_ATBREPLICATOR213_ADDR + _ATBREPLICATOR_IDFILTER1_OFFSET, idfilter1_new);
 	_CSLock(_ATBREPLICATOR213_ADDR);
 
-	// Configure TPIU for port size 4, continuous formatting
-	_CSUnlock(_TPIU_ADDR);
-	JLINK_MEM_WriteU32(_TPIU_ADDR + _CURRENTPORTSIZE_OFFSET, _CURRENTPORTSIZE_4);
-	JLINK_MEM_WriteU32(_TPIU_ADDR + _FFCR_OFFSET, _ENFCONT | _FONFLIN | _ENFTC);
-	JLINK_MEM_WriteU32(_TPIU_ADDR + _FSCR_OFFSET, _TPIU_SYNC_FRAME_COUNT);
-	_CSLock(_TPIU_ADDR);
-
 	return 0;
 }
 
@@ -124,7 +121,23 @@ int ConfigTargetSettings(void)
 
 int StartTPIU(void)
 {
-	/* We sort this ourselves in _SetupETMTPIUTrace, don't let JLink touch it */
+	// Configure TPIU for port size 4, continuous formatting, matches with firmware side handling
+	_CSUnlock(_TPIU_ADDR);
+	JLINK_MEM_WriteU32(_TPIU_ADDR + _CURRENTPORTSIZE_OFFSET, _CURRENTPORTSIZE_4);
+	JLINK_MEM_WriteU32(_TPIU_ADDR + _FFCR_OFFSET, _ENFCONT | _FONFLIN | _ENFTC);
+	JLINK_MEM_WriteU32(_TPIU_ADDR + _FSCR_OFFSET, _TPIU_SYNC_FRAME_COUNT);
+	_CSLock(_TPIU_ADDR);
+
+	return 0;
+}
+
+int StartETM(void)
+{
+	return 0;
+}
+
+int StopETM(void)
+{
 	return 0;
 }
 
