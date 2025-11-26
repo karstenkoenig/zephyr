@@ -6,12 +6,19 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/gpio.h>
 
 #ifdef CONFIG_LOG_FRONTEND_STMESP
 #include <zephyr/logging/log_frontend_stmesp.h>
 #endif
 
 LOG_MODULE_REGISTER(app);
+
+#define LED0_NODE DT_ALIAS(led0)
+
+#if DT_NODE_HAS_STATUS(LED0_NODE, okay)
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+#endif
 
 #define TEST_LOG(rpt, item)                                                                        \
 	({                                                                                         \
@@ -60,8 +67,23 @@ int main(void)
 	uint32_t rpt = 10;
 	uint32_t t0, t1, t2, t3, t_s;
 	char str[] = "test string";
+	int ret;
 
 	get_core_name();
+
+#if DT_NODE_HAS_STATUS(LED0_NODE, okay)
+	/* Initialize LED */
+	if (!gpio_is_ready_dt(&led)) {
+		LOG_ERR("LED device not ready");
+		return 0;
+	}
+
+	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure LED pin");
+		return 0;
+	}
+#endif
 
 	t = k_cycle_get_32();
 	delta = k_cycle_get_32() - t;
@@ -107,6 +129,9 @@ int main(void)
 	k_msleep(400);
 
 	while(1) {
+#if DT_NODE_HAS_STATUS(LED0_NODE, okay)
+		gpio_pin_toggle_dt(&led);
+#endif
 		k_msleep(1000);
 		LOG_INF("Heartbeat from %s core", core_name);
 	}
